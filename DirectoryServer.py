@@ -7,7 +7,8 @@ import sys
 from OpenSSL import SSL
 import sqlite3
 
-DB_NAME = "replicates.db"
+DB_REPLICATES_NAME = "replicates.db"
+DB_MASTER_NAME = "master.db"
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/DIRECTORY_SERVER/udara.com.crt')
 key = os.path.join(os.path.dirname(__file__), './resources/DIRECTORY_SERVER/udara.com.key')
@@ -19,22 +20,63 @@ dirserverapp = Flask(__name__)
 def index():
     return 'DirectoryServer is running!'
 
-@dirserverapp.route('/DirectoryServer/NewReplicate' methods=['POST'])
+@dirserverapp.route('/DirectoryServer/NewFiles', methods=['POST'])
 def addToDB():
 	if not request.json:
 		abort(400)
-	print request.json
+	else:
+		newFilesDict = request.json
+		connectionReplicates = sqlite3.connect(DB_REPLICATES_NAME)
+		cursorReplicates = connectionReplicates.cursor()
+
+		connectionMaster = sqlite3.connect(DB_MASTER_NAME)
+		cursorMaster = connectionMaster.cursor()
+
+		for fileinfo in newFilesDict:
+			master = fileinfo['master']
+			server_id = fileinfo['id']
+			filename = fileinfo['title']
+			if (master == True):
+				params = (server_id, filename)
+				sql_command = "INSERT INTO master VALUES (?, ?)"
+				cursorMaster.execute(sql_command, params)
+				connectionMaster.commit()
+			else:
+				params = (server_id, filename)
+				sql_command = "INSERT INTO replicates VALUES (?, ?)"
+				cursorReplicates.execute(sql_command, params)
+				connectionReplicates.commit()
+
+
+			
+		cursorMaster.execute("SELECT * FROM master;")
+		result = cursorMaster.fetchall()
+		for r in result:
+			print(r)
+
+		cursorReplicates.execute("SELECT * FROM replicates;")
+		result = cursorReplicates.fetchall()
+		for r in result:
+			print(r)
+
+		return "Successfully saved to database!", 201
 	
 def initDB():
-	if (not os.path.isfile('./%s') % DB_NAME): #if db doesn't exist
+	filenameReplicates = "%s" % DB_REPLICATES_NAME
+	filenameMaster = "%s" % DB_MASTER_NAME
+	if (not os.path.isfile(filenameReplicates)): #if db doesn't exist
 		connection = sqlite3.connect("replicates.db")
 		cursor = connection.cursor()
-		sql_command = """CREATE TABLE replicates ( server_id INTEGER(100) PRIMARY KEY, filename VARCHAR(30), server_ip VARCHAR(20), direction CHAR(1));"""
+		sql_command = """CREATE TABLE replicates ( server_id VARCHAR(100) PRIMARY KEY, filename VARCHAR(30), );"""
 		cursor.execute(sql_command)
 		connection.commit()
-	else:
-		connection = sqlite3.connect("replicates.db")
-		cursor = connection.cursor()
+	
+	if (not os.path.isfile(filenameMaster)):
+		connectionMaster = sqlite3.connect("master.db")
+		cursorMaster = connectionMaster.cursor()
+		sql_command = """CREATE TABLE master ( server_id VARCHAR(100) , filename VARCHAR(30) PRIMARY KEY);"""
+		cursorMaster.execute(sql_command)
+		connectionMaster.commit()
 
 if __name__ == '__main__':
 	initDB()

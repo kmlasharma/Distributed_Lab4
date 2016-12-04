@@ -35,7 +35,6 @@ def uploadNewFileFromClient():
 		makeReplicate(newFile, filename, fileID)
 		return "Successfully saved master copy onto server %s" % server_id, 201
 
-
 @fileserver.route('/Server/Replicate', methods=["POST"])
 def acceptReplicate():
 	if not request.files:
@@ -46,7 +45,7 @@ def acceptReplicate():
 		path = FILE_FOLDER + filename
 		newFile.save(path)
 		print ("Successfully saved %s" % filename)
-		return jsonify({server_id: "Successfully saved replicate onto server"}), 201
+		return jsonify({"Server_ID" : server_id, "Message" : "Successfully saved replicate onto server"}), 201
 
 #send the file to other server for replication
 def makeReplicate(fileToReplicate, filename, fileID):
@@ -57,9 +56,27 @@ def makeReplicate(fileToReplicate, filename, fileID):
 		}
 	data = {'title' : filename, 'id' : fileID}
 	response = requests.post(url, files=files, data=data, verify=False)
-	if (response.status_code == 201):
+	if (response.status_code == 201): # 
 		content = response.content
-		print (content)
+		responseDict = json.loads(content.decode())
+		print (responseDict)
+		replicateID = responseDict["Server_ID"]
+		
+		fileSaved = [
+		    {
+		        'id': server_id,
+		        'title': filename,
+		        'master' : True
+		    },
+		    {
+		        'id': replicateID,
+		        'title': filename,
+		        'master' : False
+		    }
+		]
+
+		response = requests.post(directoryServerAddress, json=fileSaved, verify=False)
+		print (response)
 	
 
 if __name__ == '__main__':

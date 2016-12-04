@@ -8,11 +8,13 @@ import sys
 from OpenSSL import SSL
 import sqlite3
 import argparse
+import json
 
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/MASTER_FILE_SERVER/udara.com.crt')
 key = os.path.join(os.path.dirname(__file__), './resources/MASTER_FILE_SERVER/udara.com.key')
 fileServerAddressesForRep = {2 : 'https://0.0.0.0:5060/Server/Replicate'}
+directoryServerAddress = "https://0.0.0.0:5010/DirectoryServer/NewFiles"
 fileserver = Flask(__name__)
 FILE_FOLDER = "./FILE_SERVER_FOLDER_%s/"
 
@@ -45,7 +47,7 @@ def acceptReplicate():
 		path = FILE_FOLDER + filename
 		newFile.save(path)
 		print ("Successfully saved %s" % filename)
-		return jsonify({server_id: "Successfully saved replicate onto server"}), 201
+		return jsonify({"Server_ID" : server_id, "Message" : "Successfully saved replicate onto server"}), 201
 
 #send the file to other server for replication
 def makeReplicate(fileToReplicate, filename, fileID):
@@ -56,9 +58,27 @@ def makeReplicate(fileToReplicate, filename, fileID):
 		}
 	data = {'title' : filename, 'id' : fileID}
 	response = requests.post(url, files=files, data=data, verify=False)
-	if (response.status_code == 201):
+	if (response.status_code == 201): # 
 		content = response.content
-		print (content)
+		responseDict = json.loads(content.decode())
+		print (responseDict)
+		replicateID = responseDict["Server_ID"]
+		
+		fileSaved = [
+		    {
+		        'id': server_id,
+		        'title': filename,
+		        'master' : True
+		    },
+		    {
+		        'id': replicateID,
+		        'title': filename,
+		        'master' : False
+		    }
+		]
+
+		response = requests.post(directoryServerAddress, json=fileSaved, verify=False)
+		print (response)
 
 
 

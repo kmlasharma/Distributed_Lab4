@@ -64,6 +64,10 @@ def uploadFile(cmd):
 	response = requests.post(url, files=files, data=data, verify=False)
 	print (response.content)
 
+	#cache file
+	newFile = open(LOCAL_STORAGE + filenameToUpload, 'r')
+	newFile.save(CLIENT_CACHE_PATH)
+	print ("Cached file %s" % filenameToUpload)
 
 
 
