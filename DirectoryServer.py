@@ -40,4 +40,4 @@ if __name__ == '__main__':
 	initDB()
 
 	context = (cer, key)
-	dirserverapp.run( host='0.0.0.0', port=5000, debug = True, ssl_context=context)
+	dirserverapp.run( host='0.0.0.0', port=5010, debug = True, ssl_context=context)
