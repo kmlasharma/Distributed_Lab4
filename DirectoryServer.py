@@ -39,6 +39,7 @@ def addToDB():
 			if (master == True):
 				modTime = fileinfo['last-modified']
 				params = (server_id, filename, modTime)
+				print (params)
 				sql_command = "INSERT INTO master VALUES (?, ?, ?)"
 				cursorMaster.execute(sql_command, params)
 				connectionMaster.commit()
@@ -49,12 +50,13 @@ def addToDB():
 				connectionReplicates.commit()
 
 
-			
+		print ("Master")
 		cursorMaster.execute("SELECT * FROM master;")
 		result = cursorMaster.fetchall()
 		for r in result:
 			print(r)
 
+		print ("Replicates")
 		cursorReplicates.execute("SELECT * FROM replicates;")
 		result = cursorReplicates.fetchall()
 		for r in result:

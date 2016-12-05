@@ -30,6 +30,7 @@ def uploadNewFileFromClient():
 		filename = request.form['title']
 		fileID = request.form['id']
 		modTime = request.form['last-modified']
+		print (modTime)
 		path = FILE_FOLDER + filename
 		newFile.save(path)
 		print ("Successfully saved %s server %s" % (filename, server_id))
@@ -79,6 +80,7 @@ def makeReplicate(fileToReplicate, filename, fileID, modTime):
 
 		response = requests.post(directoryServerAddress, json=fileSaved, verify=False)
 		print (response)
+
 	
 
 if __name__ == '__main__':

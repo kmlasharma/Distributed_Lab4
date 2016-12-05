@@ -42,22 +42,18 @@ tasks = [
 def index():
     return 'Flask is running!'
 
-@clientapp.route('/data')
-def names():
-    data = {"names": ["John", "Jacob", "Julie", "Jennifer"]}
-    return jsonify(data)
+def getLastModified(path):
+	return str(datetime.fromtimestamp(os.path.getmtime(path)))
 
 def uploadFile(cmd):
-	cmdarr = cmd.split(" ")
-	filenameToUpload = cmdarr[1]
+	filenameToUpload = cmd[1]
 	for filename in os.listdir(CLIENT_CACHE_PATH):
 		if filename == filenameToUpload:
-			print ("Error! File exists!")
+			print ("Error! File already exists. Please select 'Write'.")
 			return 
 
 	#send file to main file server
-
-	modTime = str(os.path.getmtime(LOCAL_STORAGE + filenameToUpload))
+	modTime = getLastModified(LOCAL_STORAGE + filenameToUpload)
 	url = fileServerAddresses[0]
 	headers = {'content-type': 'application/json'}
 	files = {
@@ -68,18 +64,25 @@ def uploadFile(cmd):
 	print (response.content)
 
 	#cache file
-	newFile = open(LOCAL_STORAGE + filenameToUpload, 'r')
-	shutil.move(LOCAL_STORAGE + newFile, CLIENT_CACHE_PATH + newFile)
+	shutil.move(LOCAL_STORAGE + filenameToUpload, CLIENT_CACHE_PATH + filenameToUpload)
 	print ("Cached file %s" % filenameToUpload)
+
+
+def retrieveReadFile(cmd):
+	filenameToRead = cmd[2]
+	modTime = getLastModified(CLIENT_CACHE_PATH + filenameToRead)
+	#send this mod time to dir ser and see if cache's copy is outdated
 
 
 if __name__ == '__main__':
 	if not os.path.isdir(CLIENT_CACHE_PATH):
 		os.mkdir(CLIENT_CACHE_PATH)
 	cmd = input("Commands: " + str(commands_list) + "\n")
-	print (cmd)
+	cmd = cmd.split(" ")
 	if (commands_list[3] in cmd):
 		uploadFile(cmd)
+	elif (commands_list[0] in cmd):
+		retrieveReadFile(cmd)
 
 
 	context = (cer, key)
