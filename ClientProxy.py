@@ -7,7 +7,9 @@ import sys
 from OpenSSL import SSL
 import json
 import base64
-
+import shutil
+import datetime
+from datetime import datetime
 
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.crt')
@@ -55,20 +57,20 @@ def uploadFile(cmd):
 
 	#send file to main file server
 
+	modTime = str(os.path.getmtime(LOCAL_STORAGE + filenameToUpload))
 	url = fileServerAddresses[0]
 	headers = {'content-type': 'application/json'}
 	files = {
 		'file' : (filenameToUpload, open(LOCAL_STORAGE + filenameToUpload, 'rb'))
 		}
-	data = {'title' : filenameToUpload, 'id' : fileID}
+	data = {'title' : filenameToUpload, 'id' : fileID, 'last-modified' : modTime}
 	response = requests.post(url, files=files, data=data, verify=False)
 	print (response.content)
 
 	#cache file
 	newFile = open(LOCAL_STORAGE + filenameToUpload, 'r')
-	newFile.save(CLIENT_CACHE_PATH)
+	shutil.move(LOCAL_STORAGE + newFile, CLIENT_CACHE_PATH + newFile)
 	print ("Cached file %s" % filenameToUpload)
-
 
 
 if __name__ == '__main__':

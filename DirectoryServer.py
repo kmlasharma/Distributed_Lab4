@@ -37,8 +37,9 @@ def addToDB():
 			server_id = fileinfo['id']
 			filename = fileinfo['title']
 			if (master == True):
-				params = (server_id, filename)
-				sql_command = "INSERT INTO master VALUES (?, ?)"
+				modTime = fileinfo['last-modified']
+				params = (server_id, filename, modTime)
+				sql_command = "INSERT INTO master VALUES (?, ?, ?)"
 				cursorMaster.execute(sql_command, params)
 				connectionMaster.commit()
 			else:
@@ -67,14 +68,14 @@ def initDB():
 	if (not os.path.isfile(filenameReplicates)): #if db doesn't exist
 		connection = sqlite3.connect("replicates.db")
 		cursor = connection.cursor()
-		sql_command = """CREATE TABLE replicates ( server_id VARCHAR(100) PRIMARY KEY, filename VARCHAR(30), );"""
+		sql_command = """CREATE TABLE replicates ( server_id VARCHAR(100) PRIMARY KEY, filename VARCHAR(30));"""
 		cursor.execute(sql_command)
 		connection.commit()
 	
 	if (not os.path.isfile(filenameMaster)):
 		connectionMaster = sqlite3.connect("master.db")
 		cursorMaster = connectionMaster.cursor()
-		sql_command = """CREATE TABLE master ( server_id VARCHAR(100) , filename VARCHAR(30) PRIMARY KEY);"""
+		sql_command = """CREATE TABLE master ( server_id VARCHAR(100) , filename VARCHAR(30) PRIMARY KEY, last_modified VARCHAR (30));"""
 		cursorMaster.execute(sql_command)
 		connectionMaster.commit()
 

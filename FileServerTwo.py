@@ -29,10 +29,11 @@ def uploadNewFileFromClient():
 		newFile = request.files["file"]
 		filename = request.form['title']
 		fileID = request.form['id']
+		modTime = request.form['last-modified']
 		path = FILE_FOLDER + filename
 		newFile.save(path)
-		print ("Successfully saved %s" % filename)
-		makeReplicate(newFile, filename, fileID)
+		print ("Successfully saved %s server %s" % (filename, server_id))
+		makeReplicate(newFile, filename, fileID, modTime)
 		return "Successfully saved master copy onto server %s" % server_id, 201
 
 @fileserver.route('/Server/Replicate', methods=["POST"])
@@ -48,7 +49,7 @@ def acceptReplicate():
 		return jsonify({"Server_ID" : server_id, "Message" : "Successfully saved replicate onto server"}), 201
 
 #send the file to other server for replication
-def makeReplicate(fileToReplicate, filename, fileID):
+def makeReplicate(fileToReplicate, filename, fileID, modTime):
 	url = fileServerAddressesForRep[2]
 	headers = {'content-type': 'application/json'}
 	files = {
@@ -66,7 +67,8 @@ def makeReplicate(fileToReplicate, filename, fileID):
 		    {
 		        'id': server_id,
 		        'title': filename,
-		        'master' : True
+		        'master' : True,
+		        'last-modified' : modTime
 		    },
 		    {
 		        'id': replicateID,
