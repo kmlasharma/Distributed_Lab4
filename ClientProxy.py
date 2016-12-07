@@ -8,6 +8,7 @@ from OpenSSL import SSL
 import json
 import base64
 import shutil
+from shutil import copyfile
 import datetime
 from datetime import datetime
 
@@ -17,26 +18,13 @@ key = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.key'
 
 CLIENT_CACHE_PATH = "./CLIENT_CACHE/"
 LOCAL_STORAGE = "./LOCAL_STORAGE/"
-commands_list = ["req read", "req write", "write", "upload"]
+commands_list = ["read", "req write", "write", "upload"]
 fileServerAddresses = ['https://0.0.0.0:5050/Server/NewFile', 'https://0.0.0.0:5060/Server/NewFile']
+directoryServerAddress = "https://0.0.0.0:5010/DirectoryServer/CheckTimestamps"
 fileID = 0
 
 clientapp = Flask(__name__)
 
-tasks = [
-    {
-        'id': 1,
-        'title': u'Buy groceries',
-        'description': u'Milk, Cheese, Pizza, Fruit, Tylenol', 
-        'done': False
-    },
-    {
-        'id': 2,
-        'title': u'Learn Python',
-        'description': u'Need to find a good Python tutorial on the web', 
-        'done': False
-    }
-]
 
 @clientapp.route('/DISTRIBUTED_LAB4')
 def index():
@@ -52,8 +40,12 @@ def uploadFile(cmd):
 			print ("Error! File already exists. Please select 'Write'.")
 			return 
 
+	#cache file
+	copyfile(LOCAL_STORAGE + filenameToUpload, CLIENT_CACHE_PATH + filenameToUpload)
+	print ("Cached file %s" % filenameToUpload)
+
 	#send file to main file server
-	modTime = getLastModified(LOCAL_STORAGE + filenameToUpload)
+	modTime = getLastModified(CLIENT_CACHE_PATH + filenameToUpload)
 	url = fileServerAddresses[0]
 	headers = {'content-type': 'application/json'}
 	files = {
@@ -63,16 +55,28 @@ def uploadFile(cmd):
 	response = requests.post(url, files=files, data=data, verify=False)
 	print (response.content)
 
-	#cache file
-	shutil.move(LOCAL_STORAGE + filenameToUpload, CLIENT_CACHE_PATH + filenameToUpload)
-	print ("Cached file %s" % filenameToUpload)
+	
 
 
 def retrieveReadFile(cmd):
-	filenameToRead = cmd[2]
+	filenameToRead = cmd[1]
 	modTime = getLastModified(CLIENT_CACHE_PATH + filenameToRead)
 	#send this mod time to dir ser and see if cache's copy is outdated
 
+	checkOutdated = {
+		'filename' : filenameToRead,
+		'last_modified' : modTime
+	}
+	response = requests.get(directoryServerAddress, json=checkOutdated, verify=False)
+
+	content = response.content
+	responseDict = json.loads(content.decode())
+	print (responseDict)
+	toUpdate = responseDict["upToDate"]
+	if toUpdate == True: #cache copy is up to date, so can transfer info from cache to user's local storage
+		copyfile(CLIENT_CACHE_PATH + filenameToRead, LOCAL_STORAGE + filenameToRead)
+		print ("Transferred cached file %s" % filenameToRead)
+	#else: # request server holding the file from dir ser, then download file from file server
 
 if __name__ == '__main__':
 	if not os.path.isdir(CLIENT_CACHE_PATH):
@@ -83,6 +87,7 @@ if __name__ == '__main__':
 		uploadFile(cmd)
 	elif (commands_list[0] in cmd):
 		retrieveReadFile(cmd)
+		print ("HIII")
 
 
 	context = (cer, key)

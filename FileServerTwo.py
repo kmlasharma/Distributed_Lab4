@@ -17,6 +17,7 @@ fileserver = Flask(__name__)
 FILE_FOLDER = "./FILE_SERVER_FOLDER_%s/"
 
 
+
 @fileserver.route('/Server')
 def index():
     return 'File Server is running!'
@@ -64,19 +65,12 @@ def makeReplicate(fileToReplicate, filename, fileID, modTime):
 		print (responseDict)
 		replicateID = responseDict["Server_ID"]
 		
-		fileSaved = [
-		    {
-		        'id': server_id,
+		fileSaved =  {
+		        'master_id': server_id,
 		        'title': filename,
-		        'master' : True,
-		        'last-modified' : modTime
-		    },
-		    {
-		        'id': replicateID,
-		        'title': filename,
-		        'master' : False
+		        'last_modified' : modTime,
+		        'replicate_id' : replicateID
 		    }
-		]
 
 		response = requests.post(directoryServerAddress, json=fileSaved, verify=False)
 		print (response)
