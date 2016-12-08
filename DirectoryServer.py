@@ -19,14 +19,14 @@ dirserverapp = Flask(__name__)
 def index():
     return 'DirectoryServer is running!'
 
-@dirserverapp.route('/DirectoryServer/CheckTimestamps', methods=['GET'])
+@dirserverapp.route('/DirectoryServer/CheckHash', methods=['GET'])
 def checkTimeStamp():
 	if not request.json:
 		abort(400)
 	else:
 		checkDict = request.json
 		file_name = checkDict['filename']
-		modTime = checkDict['last_modified']
+		hashedString = checkDict['hash']
 		connection = sqlite3.connect(DB_NAME)
 		cursor = connection.cursor()
 
@@ -35,7 +35,7 @@ def checkTimeStamp():
 		result = cursor.fetchall()
 		for r in result:
 			print(r)
-		cursor.execute("SELECT last_modified FROM fileDirectory WHERE filename=?", (file_name,))
+		cursor.execute("SELECT hash FROM fileDirectory WHERE filename=?", (file_name,))
 		result = cursor.fetchall()
 		if result is None:
 			print ("ITS NONE!!!!!!!")
@@ -43,11 +43,28 @@ def checkTimeStamp():
 			print ("ITS NOT NONE!!!!!!!")
 			for r in result:
 				print(r[0])
-		print (modTime)
-		if r[0] == modTime:
+		print (hashedString)
+		if r[0] == hashedString:
 			return make_response(jsonify({'upToDate': True}), 200)
 		else:
 			return make_response(jsonify({'upToDate': False}), 200)
+
+@dirserverapp.route('/DirectoryServer/GetServerID', methods=['GET'])
+def getServerID():
+	if not request.json:
+		abort(400)
+	else:
+		dataDict = request.json
+		filename = dataDict['filename']
+		connection = sqlite3.connect(DB_NAME)
+		cursor = connection.cursor()
+		cursor.execute("SELECT replicate_server_id FROM fileDirectory WHERE filename=?", (filename,))
+		result = cursor.fetchall()
+		replicate_server_id = result[0][0]
+		print (result)
+		print (replicate_server_id)
+		print ("Return replicate id of : %s" % replicate_server_id)
+		return make_response(jsonify({'ID': replicate_server_id}), 200)
 
 
 		
@@ -63,10 +80,10 @@ def addToDB():
 
 		master_id = newFilesDict['master_id']
 		title = newFilesDict['title']
-		modTime = newFilesDict['last_modified']
+		hashedFile = newFilesDict['hash']
 		replicate_id = newFilesDict['replicate_id']
 
-		params = (master_id, title, modTime, replicate_id)
+		params = (master_id, title, hashedFile, replicate_id)
 		sql_command = "INSERT INTO fileDirectory VALUES (?, ?, ?, ?)"
 		cursor.execute(sql_command, params)
 		conn.commit()
@@ -84,9 +101,18 @@ def initDB():
 	if (not os.path.isfile(filenameMaster)):
 		connectionMaster = sqlite3.connect("fileDirectory.db")
 		cursorMaster = connectionMaster.cursor()
-		sql_command = """CREATE TABLE fileDirectory ( master_server_id VARCHAR(100) , filename VARCHAR(30) PRIMARY KEY, last_modified VARCHAR (30), replicate_server_id VARCHAR(100));"""
+		sql_command = """CREATE TABLE fileDirectory ( master_server_id VARCHAR(100) , filename VARCHAR(30) PRIMARY KEY, hash VARCHAR (200), replicate_server_id VARCHAR(100));"""
 		cursorMaster.execute(sql_command)
 		connectionMaster.commit()
+	else: #read from what is already in db
+		connection = sqlite3.connect(DB_NAME)
+		cursor = connection.cursor()
+		cursor.execute("SELECT * FROM fileDirectory;")
+		result = cursor.fetchall()
+		print ("===")
+		for r in result:
+			print (r)
+		print ("===")
 
 if __name__ == '__main__':
 	initDB()

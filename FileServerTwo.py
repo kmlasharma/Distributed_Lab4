@@ -2,12 +2,14 @@ from flask import Flask, jsonify
 from flask import abort
 from flask import make_response
 from flask import request
+from flask import Response
 import requests
 import os
 import sys
 from OpenSSL import SSL
 import sqlite3
 import argparse
+from flask import send_file
 
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/MASTER_FILE_SERVER/udara.com.crt')
@@ -30,12 +32,12 @@ def uploadNewFileFromClient():
 		newFile = request.files["file"]
 		filename = request.form['title']
 		fileID = request.form['id']
-		modTime = request.form['last-modified']
-		print (modTime)
+		hashedFile = request.form['hash']
+		print (hashedFile)
 		path = FILE_FOLDER + filename
 		newFile.save(path)
 		print ("Successfully saved %s server %s" % (filename, server_id))
-		makeReplicate(newFile, filename, fileID, modTime)
+		makeReplicate(newFile, filename, fileID, hashedFile)
 		return "Successfully saved master copy onto server %s" % server_id, 201
 
 @fileserver.route('/Server/Replicate', methods=["POST"])
@@ -51,7 +53,7 @@ def acceptReplicate():
 		return jsonify({"Server_ID" : server_id, "Message" : "Successfully saved replicate onto server"}), 201
 
 #send the file to other server for replication
-def makeReplicate(fileToReplicate, filename, fileID, modTime):
+def makeReplicate(fileToReplicate, filename, fileID, hashedFile):
 	url = fileServerAddressesForRep[2]
 	headers = {'content-type': 'application/json'}
 	files = {
@@ -68,12 +70,31 @@ def makeReplicate(fileToReplicate, filename, fileID, modTime):
 		fileSaved =  {
 		        'master_id': server_id,
 		        'title': filename,
-		        'last_modified' : modTime,
+		        'hash' : hashedFile,
 		        'replicate_id' : replicateID
 		    }
 
 		response = requests.post(directoryServerAddress, json=fileSaved, verify=False)
 		print (response)
+
+
+@fileserver.route('/Server/retrieveFile', methods=['GET'])
+def retrieveFile():
+	if not request.json:
+		abort(400)
+	else:
+		dataDict = request.json
+		filename = dataDict['filename']
+		for eachFilename in os.listdir(FILE_FOLDER):
+			print ("Found in dir " + eachFilename)
+			print ("Looking for " + filename)
+			if eachFilename == filename:
+				openFile = open(FILE_FOLDER + filename, 'r')
+				break
+		if (openFile != None):
+			return (send_file(FILE_FOLDER + filename))
+		else:
+			return jsonify({"Error" : "Error! File not found at this server!"}), 404
 
 	
 

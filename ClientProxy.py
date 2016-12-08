@@ -11,6 +11,7 @@ import shutil
 from shutil import copyfile
 import datetime
 from datetime import datetime
+import hashlib
 
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.crt')
@@ -19,8 +20,8 @@ key = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.key'
 CLIENT_CACHE_PATH = "./CLIENT_CACHE/"
 LOCAL_STORAGE = "./LOCAL_STORAGE/"
 commands_list = ["read", "req write", "write", "upload"]
-fileServerAddresses = ['https://0.0.0.0:5050/Server/NewFile', 'https://0.0.0.0:5060/Server/NewFile']
-directoryServerAddress = "https://0.0.0.0:5010/DirectoryServer/CheckTimestamps"
+fileServerAddresses = {'1' : 'https://0.0.0.0:5050/Server/', '2' : 'https://0.0.0.0:5060/Server/'}
+directoryServerAddress = "https://0.0.0.0:5010/DirectoryServer/"
 fileID = 0
 
 clientapp = Flask(__name__)
@@ -29,9 +30,6 @@ clientapp = Flask(__name__)
 @clientapp.route('/DISTRIBUTED_LAB4')
 def index():
     return 'Flask is running!'
-
-def getLastModified(path):
-	return str(datetime.fromtimestamp(os.path.getmtime(path)))
 
 def uploadFile(cmd):
 	filenameToUpload = cmd[1]
@@ -45,29 +43,30 @@ def uploadFile(cmd):
 	print ("Cached file %s" % filenameToUpload)
 
 	#send file to main file server
-	modTime = getLastModified(CLIENT_CACHE_PATH + filenameToUpload)
-	url = fileServerAddresses[0]
+	# modTime = getLastModified(CLIENT_CACHE_PATH + filenameToUpload)
+	hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filenameToUpload,'rb').read()).hexdigest()
+	url = fileServerAddresses['1']
 	headers = {'content-type': 'application/json'}
 	files = {
 		'file' : (filenameToUpload, open(LOCAL_STORAGE + filenameToUpload, 'rb'))
 		}
-	data = {'title' : filenameToUpload, 'id' : fileID, 'last-modified' : modTime}
-	response = requests.post(url, files=files, data=data, verify=False)
+	data = {'title' : filenameToUpload, 'id' : fileID, 'hash' : hashedFile}
+	response = requests.post(url + "NewFile", files=files, data=data, verify=False)
 	print (response.content)
 
-	
+# def writeToFile(cmd):
+# 	#make sure the client has authority to cache
 
 
 def retrieveReadFile(cmd):
 	filenameToRead = cmd[1]
-	modTime = getLastModified(CLIENT_CACHE_PATH + filenameToRead)
-	#send this mod time to dir ser and see if cache's copy is outdated
 
+	hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filenameToRead,'rb').read()).hexdigest()
 	checkOutdated = {
 		'filename' : filenameToRead,
-		'last_modified' : modTime
+		'hash' : hashedFile
 	}
-	response = requests.get(directoryServerAddress, json=checkOutdated, verify=False)
+	response = requests.get(directoryServerAddress + "CheckHash", json=checkOutdated, verify=False)
 
 	content = response.content
 	responseDict = json.loads(content.decode())
@@ -76,7 +75,22 @@ def retrieveReadFile(cmd):
 	if toUpdate == True: #cache copy is up to date, so can transfer info from cache to user's local storage
 		copyfile(CLIENT_CACHE_PATH + filenameToRead, LOCAL_STORAGE + filenameToRead)
 		print ("Transferred cached file %s" % filenameToRead)
-	#else: # request server holding the file from dir ser, then download file from file server
+	else: # request server holding the file from dir ser, then download file from file server (note when the cache's copy is out of date we assume the master file server and replicate file server is up to date)
+		#TODO
+		data = {'filename' : filenameToRead}
+		response = requests.get(directoryServerAddress + "GetServerID", json=data, verify=False)
+		print (response)
+		content = response.content
+		responseDict = json.loads(content.decode())
+		print (responseDict)
+		serverIdToQuery = responseDict["ID"]
+		url = fileServerAddresses[serverIdToQuery]
+		response = requests.get(url + "retrieveFile", json=data, verify=False)
+		print (response.content)
+
+
+
+
 
 if __name__ == '__main__':
 	if not os.path.isdir(CLIENT_CACHE_PATH):
@@ -85,9 +99,13 @@ if __name__ == '__main__':
 	cmd = cmd.split(" ")
 	if (commands_list[3] in cmd):
 		uploadFile(cmd)
+		print ("Client wants to upload")
 	elif (commands_list[0] in cmd):
 		retrieveReadFile(cmd)
-		print ("HIII")
+		print ("Client wants to read")
+	elif (commands_list[2] in cmd):
+		writeToFile(cmd)
+		print ("Client wants to write")
 
 
 	context = (cer, key)
