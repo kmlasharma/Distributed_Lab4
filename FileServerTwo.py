@@ -2,6 +2,7 @@ from flask import Flask, jsonify
 from flask import abort
 from flask import make_response
 from flask import request
+from flask import send_file
 from flask import Response
 import requests
 import os
@@ -9,7 +10,7 @@ import sys
 from OpenSSL import SSL
 import sqlite3
 import argparse
-from flask import send_file
+import json
 
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/MASTER_FILE_SERVER/udara.com.crt')
