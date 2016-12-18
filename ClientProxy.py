@@ -18,17 +18,17 @@ context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.crt')
 key = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.key')
 
-CLIENT_CACHE_PATH = "./CLIENT_CACHE/"
+CLIENT_CACHE_PATH = "./CLIENT_CACHE_ONE/"
 LOCAL_STORAGE = "./LOCAL_STORAGE/"
-commands_dict = {"1" : "read", "2" : "req write", "3" : "write", "4": "upload"}
+commands_dict = {"1" : "Read a File", "2" : "Request Write Access to a File", "3" : "Write to a File", "4": "Upload a new File"}
 fileServerAddresses = {'1' : 'https://0.0.0.0:5050/Server/', '2' : 'https://0.0.0.0:5060/Server/'}
 directoryServerAddress = "https://0.0.0.0:5010/DirectoryServer/"
 DB_NAME_USERS = "Users.db"
 DB_NAME_LOCKS = "Locks.db"
-fileID = 0
 loggedIn = []
 clientapp = Flask(__name__)
-
+filenameToHash = {}
+fileID = 0
 
 @clientapp.route('/DISTRIBUTED_LAB4')
 def index():
@@ -59,6 +59,7 @@ def uploadFile(cmd): #num filename username
 	data = {'title' : filenameToUpload, 'id' : fileID, 'hash' : hashedFile}
 	response = requests.post(url + "NewFile", files=files, data=data, verify=False)
 	print (response.content)
+	filenameToHash[filenameToUpload] = hashedFile
 
 #here the only way to write to a file is that a user has already got a lock on it from req write
 def writeToFile(cmd): #num filename username
@@ -73,11 +74,35 @@ def writeToFile(cmd): #num filename username
 	if (file_name): #exists in db
 		user_name = queryDB(DB_NAME_LOCKS, "SELECT username FROM locks WHERE filename=?", filename)
 		if (user_name == username): #correct person is requesting to use their lock capabilities to write
-			print ("YAY! YOUVE LOCKED FILE ALREADY!")
+			print ("You have a pending lock on this file - only YOU can write to it.")
+			#post new written file to file servers which will update dir ser
+			print ("Caching file...")
+			copyfile(LOCAL_STORAGE + filename, CLIENT_CACHE_PATH + filename)
+			hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filename,'rb').read()).hexdigest()
+			# get the master id holding this file
+			masterFileServerID = getServerID(filename, True)
+			url = fileServerAddresses[masterFileServerID]
+			files = {
+				'file' : (filename, open(CLIENT_CACHE_PATH + filename, 'rb'))
+				}
+			data = {'title' : filename, 'id' : fileID, 'hash' : hashedFile}
+			print ("Informing master file server of an updated File")
+			response = requests.post(url + "UpdateFile", files=files, data=data, verify=False)
+			print (response.content)
+			#relinquish lock on file
+			deleteLock(filename)
 		else:
 			print ("This file is already locked by a different user (%s). You cannot write to it." % user_name)
 	else: #ie not in lock service
 		print ("Please use 'req write' function to request a lock on the file")
+
+
+def deleteLock(filename):
+	connection = sqlite3.connect(DB_NAME_LOCKS)
+	cursor = connection.cursor()
+	params = (filename,)
+	cursor.execute("DELETE FROM locks WHERE filename=?", params)
+	connection.commit()
 
 
 def requestWriteAccess(cmd): #num filename username
@@ -91,10 +116,77 @@ def requestWriteAccess(cmd): #num filename username
 	if (file_name): #exists in db
 		user_name = queryDB(DB_NAME_LOCKS, "SELECT username FROM locks WHERE filename=?", filename)
 		print ("This file is already locked by a different user (%s). Please try again later." % user_name)
-	else: #ie not in lock service, so put in lock and give them file.
+	else: #ie not in lock server, so put in lock and give them file (check cache)
 		params = (filename, username)
 		sql_command = "INSERT INTO locks VALUES (?, ?)"
 		insertIntoDB(DB_NAME_LOCKS, params, sql_command)
+		#check if in cache
+		if os.path.isfile(CLIENT_CACHE_PATH+filename):
+			print ("File exists in cache. Checking if it is up to date...")
+			hashedFile = filenameToHash[filename]
+			#check if up to date
+			upToDate = checkIfUpToDate(hashedFile, filename)
+			if upToDate == True: #cache copy is up to date, so can transfer info from cache to user's local storage
+				copyfile(LOCAL_STORAGE + filename, CLIENT_CACHE_PATH + filename)
+				print ("Transferred cached file with write access: %s" % filename)
+			else: # request server holding the file from dir ser, then download file from file server (note when the cache's copy is out of date we assume the master file server and replicate file server is up to date)
+				serverID = getServerID(filename, True)
+				getFileFromFileServer(serverID, filename)
+		else: # request server id from dir ser
+			serverID = getServerID(filename, True)
+			getFileFromFileServer(serverID, filename)
+
+def getServerID(filename, masterNeededValue):
+	#TODO write response to a file, transfer to client cache and transfer to local storage.
+	data = {'filename' : filename, 'masterNeeded' : masterNeededValue}
+	response = requests.get(directoryServerAddress + "GetServerID", json=data, verify=False)
+	print (response)
+	content = response.content
+	responseDict = json.loads(content.decode())
+	print (responseDict)
+	serverIdToQuery = responseDict["ID"]
+	return serverIdToQuery
+
+def getFileFromFileServer(serverID, filename):
+	data = {'filename' : filename}
+	url = fileServerAddresses[serverID]
+	response = requests.get(url + "retrieveFile", json=data, verify=False)
+	print (response.content)
+
+def checkIfUpToDate(hashedFile, filename):
+	checkOutdated = {
+			'filename' : filename,
+			'hash' : hashedFile
+		}
+	response = requests.get(directoryServerAddress + "CheckHash", json=checkOutdated, verify=False)
+	content = response.content
+	responseDict = json.loads(content.decode())
+	print (responseDict)
+	upToDate = responseDict["upToDate"]
+	return upToDate
+
+
+def retrieveReadFile(cmd):
+	if (checkLoggedIn(cmd[2]) == False):
+		print ("Unable to carry out read task. User is not logged in.")
+		return
+	filenameToRead = cmd[1]
+	if(os.path.isfile(CLIENT_CACHE_PATH + filenameToRead)):
+		print ("File exists in client's cache.")
+		hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filenameToRead,'rb').read()).hexdigest()
+		upToDate = checkIfUpToDate(hashedFile, filenameToRead)
+	else:
+		print ("File does not exist in client cache.")
+		upToDate = False
+
+	if upToDate == True: #cache copy is up to date, so can transfer info from cache to user's local storage
+		copyfile(CLIENT_CACHE_PATH + filenameToRead, LOCAL_STORAGE + filenameToRead)
+		print ("Transferred cached file %s" % filenameToRead)
+	else: # request server holding the file from dir ser, then download file from file server (note when the cache's copy is out of date we assume the master file server and replicate file server is up to date)
+		serverID = getServerID(filenameToRead, False)
+		getFileFromFileServer(serverID, filenameToRead)
+
+
 
 def insertIntoDB(dbName, params, query):
 	connection = sqlite3.connect(dbName)
@@ -137,7 +229,7 @@ def handleUser(username, password):
 			loggedIn.append(user_name)
 		else:
 			print ("The user provided the wrong password")
-			print ("The db: %s" % resultPassword)
+			print ("The db password: %s" % resultPassword)
 			print ("The user's: %s" % hashedPassword)
 	else:
 		print ("The user does not exist in DB. Signing up user...")
@@ -148,46 +240,6 @@ def handleUser(username, password):
 		loggedIn.append(username)
 		print ("User %s signed up and logged in." % username)
 
-
-
-
-def retrieveReadFile(cmd):
-	if (checkLoggedIn(cmd[2]) == False):
-		print ("Unable to carry out read task. User is not logged in.")
-		return
-	filenameToRead = cmd[1]
-	if(os.path.isfile(CLIENT_CACHE_PATH + filenameToRead)):
-		print ("File exists in client's cache.")
-		hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filenameToRead,'rb').read()).hexdigest()
-		checkOutdated = {
-			'filename' : filenameToRead,
-			'hash' : hashedFile
-		}
-		response = requests.get(directoryServerAddress + "CheckHash", json=checkOutdated, verify=False)
-
-		content = response.content
-		responseDict = json.loads(content.decode())
-		print (responseDict)
-		toUpdate = responseDict["upToDate"]
-	else:
-		print ("File does not exist in client cache.")
-		toUpdate = False
-
-	if toUpdate == True: #cache copy is up to date, so can transfer info from cache to user's local storage
-		copyfile(CLIENT_CACHE_PATH + filenameToRead, LOCAL_STORAGE + filenameToRead)
-		print ("Transferred cached file %s" % filenameToRead)
-	else: # request server holding the file from dir ser, then download file from file server (note when the cache's copy is out of date we assume the master file server and replicate file server is up to date)
-		#TODO write response to a file, transfer to client cache and transfer to local storage.
-		data = {'filename' : filenameToRead}
-		response = requests.get(directoryServerAddress + "GetServerID", json=data, verify=False)
-		print (response)
-		content = response.content
-		responseDict = json.loads(content.decode())
-		print (responseDict)
-		serverIdToQuery = responseDict["ID"]
-		url = fileServerAddresses[serverIdToQuery]
-		response = requests.get(url + "retrieveFile", json=data, verify=False)
-		print (response.content)
 
 
 def initDB():
@@ -225,11 +277,20 @@ def initDB():
 			print (r)
 		print ("===")
 
+def initCacheAndReadings():
+	if not os.path.isdir(CLIENT_CACHE_PATH):
+		os.mkdir(CLIENT_CACHE_PATH)
+	else: #read from it and initialise hashes
+		for filename in os.listdir(CLIENT_CACHE_PATH):
+			hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filename,'rb').read()).hexdigest()
+			filenameToHash[filename] = hashedFile
+		print (filenameToHash)
+
+
 
 
 if __name__ == '__main__':
-	if not os.path.isdir(CLIENT_CACHE_PATH):
-		os.mkdir(CLIENT_CACHE_PATH)
+	initCacheAndReadings()
 	initDB()
 	print ("== LOG IN ==")
 	loginName = input("User Name: ")

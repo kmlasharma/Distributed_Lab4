@@ -56,9 +56,13 @@ def getServerID():
 	else:
 		dataDict = request.json
 		filename = dataDict['filename']
+		master = dataDict['masterNeeded']
 		connection = sqlite3.connect(DB_NAME)
 		cursor = connection.cursor()
-		cursor.execute("SELECT replicate_server_id FROM fileDirectory WHERE filename=?", (filename,))
+		if master == True:
+			cursor.execute("SELECT master_server_id FROM fileDirectory WHERE filename=?", (filename,))
+		else:
+			cursor.execute("SELECT replicate_server_id FROM fileDirectory WHERE filename=?", (filename,))
 		result = cursor.fetchall()
 		replicate_server_id = result[0][0]
 		print (result)
@@ -66,7 +70,26 @@ def getServerID():
 		print ("Return replicate id of : %s" % replicate_server_id)
 		return make_response(jsonify({'ID': replicate_server_id}), 200)
 
+@dirserverapp.route('/DirectoryServer/UpdateFile', methods=['POST'])
+def updateDB():
+	if not request.json:
+		abort(400)
+	else:
+		newFilesDict = request.json
+		conn = sqlite3.connect(DB_NAME)
+		cursor = conn.cursor()
 
+		hashedFile = newFilesDict['hash']
+		title = newFilesDict['title']
+		params = (hashedFile, title)
+		sql_command = "UPDATE fileDirectory SET hash = ? WHERE filename = ?;"
+		cursor.execute(sql_command, params)
+		conn.commit()
+
+		print ("fileDirectory")
+		printDB()
+
+		return "Successfully updated the database!", 201
 		
 
 @dirserverapp.route('/DirectoryServer/NewFiles', methods=['POST'])
@@ -89,13 +112,21 @@ def addToDB():
 		conn.commit()
 
 		print ("fileDirectory")
-		cursor.execute("SELECT * FROM fileDirectory;")
-		result = cursor.fetchall()
-		for r in result:
-			print(r)
+		printDB()
 
 		return "Successfully saved to database!", 201
 	
+def printDB():
+	connection = sqlite3.connect(DB_NAME)
+	cursor = connection.cursor()
+	cursor.execute("SELECT * FROM fileDirectory;")
+	result = cursor.fetchall()
+	print ("===")
+	for r in result:
+		print (r)
+	print ("===")
+
+
 def initDB():
 	filenameMaster = "%s" % DB_NAME
 	if (not os.path.isfile(filenameMaster)):
@@ -105,15 +136,7 @@ def initDB():
 		cursorMaster.execute(sql_command)
 		connectionMaster.commit()
 	else: #read from what is already in db
-		connection = sqlite3.connect(DB_NAME)
-		cursor = connection.cursor()
-		cursor.execute("SELECT * FROM fileDirectory;")
-		result = cursor.fetchall()
-		print ("===")
-		for r in result:
-			print (r)
-		print ("===")
-
+		printDB()
 if __name__ == '__main__':
 	initDB()
 
