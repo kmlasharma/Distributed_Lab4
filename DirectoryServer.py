@@ -213,18 +213,18 @@ def initDB():
 		cursorMaster.execute(sql_command)
 		connectionMaster.commit()
 	else: #drop the contents (assuming when dir server was last dropped, all file servers were dropped.)
-		# print ("Dropping DB %s as it already exists" % filenameFileSers)
-		# connection = sqlite3.connect(FILE_SERVERS_DB_NAME)
-		# cursor = connection.cursor()
-		# cursor.execute("""DROP TABLE listOfFileServers""")
-		# print ("Creating DB %s as it was dropped." % filenameFileSers)
-		# sql_command = """CREATE TABLE listOfFileServers ( server_id VARCHAR(100) PRIMARY KEY, base_url VARCHAR(200));"""
-		# cursor.execute(sql_command)
-		# connection.commit()
-		printDB("listOfFileServers", FILE_SERVERS_DB_NAME) 
+		print ("Dropping DB %s as it already exists" % filenameFileSers)
+		connection = sqlite3.connect(FILE_SERVERS_DB_NAME)
+		cursor = connection.cursor()
+		cursor.execute("""DROP TABLE listOfFileServers""")
+		print ("Creating DB %s as it was dropped." % filenameFileSers)
+		sql_command = """CREATE TABLE listOfFileServers ( server_id VARCHAR(100) PRIMARY KEY, base_url VARCHAR(200));"""
+		cursor.execute(sql_command)
+		connection.commit()
+		
 
 if __name__ == '__main__':
 	initDB()
 
 	context = (cer, key)
-	dirserverapp.run( host='0.0.0.0', port=5010, debug = True, ssl_context=context)
+	dirserverapp.run( host='0.0.0.0', port=5050, debug = True, ssl_context=context)

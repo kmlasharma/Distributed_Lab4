@@ -13,16 +13,18 @@ import datetime
 from datetime import datetime
 import hashlib
 import sqlite3
+import argparse
+
 
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.crt')
 key = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.key')
 
-CLIENT_CACHE_PATH = "./CLIENT_CACHE_ONE/"
+CLIENT_CACHE_PATH = "./CLIENT_CACHE_%s/"
 LOCAL_STORAGE = "./LOCAL_STORAGE/"
 commands_dict = {"1" : "Read a File", "2" : "Request Write Access to a File", "3" : "Write to a File", "4": "Upload a new File"}
 fileServerAddresses = {}
-directoryServerAddress = "https://0.0.0.0:5010/DirectoryServer/"
+directoryServerAddress = "https://0.0.0.0:5050/DirectoryServer/"
 DB_NAME_USERS = "Users.db"
 DB_NAME_LOCKS = "Locks.db"
 loggedIn = []
@@ -157,7 +159,6 @@ def requestWriteAccess(cmd): #num filename username
 			getFileFromFileServer(serverID, filename)
 
 def getServerID(filename, masterNeededValue):
-	#TODO write response to a file, transfer to client cache and transfer to local storage.
 	data = {'filename' : filename, 'masterNeeded' : masterNeededValue}
 	response = requests.get(directoryServerAddress + "GetServerID", json=data, verify=False)
 	print (response)
@@ -181,7 +182,14 @@ def getFileFromFileServer(serverID, filename):
 	else:	
 		url = fileServerAddresses[serverID]
 	response = requests.get(url + "/retrieveFile", json=data, verify=False)
-	print (response.content)
+	print ("Writing file to client cache...")
+	f = open(CLIENT_CACHE_PATH + filename, 'wb')
+	f.write(response.content)
+	f.close()
+	#update file in local storage
+	print ("Transferring file to local storage...")
+	copyfile(LOCAL_STORAGE + filename, CLIENT_CACHE_PATH + filename)
+
 
 def checkIfUpToDate(hashedFile, filename):
 	checkOutdated = {
@@ -308,6 +316,7 @@ def initDB():
 		print ("===")
 
 def initCacheAndReadings():
+	
 	if not os.path.isdir(CLIENT_CACHE_PATH):
 		os.mkdir(CLIENT_CACHE_PATH)
 	else: #read from it and initialise hashes
@@ -320,6 +329,18 @@ def initCacheAndReadings():
 
 
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description='Client Proxy Server requires an ID (1-100) and a port number (5000 - 5040)')
+	parser.add_argument("-id", help="id of file server")
+	parser.add_argument("-port", help="id of file server")
+	args = parser.parse_args()
+
+	if (args.id):
+		global client_id
+		client_id = args.id
+	if (args.port):
+		global port_num
+		port_num = args.port
+	CLIENT_CACHE_PATH = CLIENT_CACHE_PATH % (client_id)
 	initCacheAndReadings()
 	initDB()
 	print ("== LOG IN ==")
@@ -345,4 +366,4 @@ if __name__ == '__main__':
 
 
 	context = (cer, key)
-	clientapp.run( host='0.0.0.0', port=5000, debug = True, ssl_context=context)
+	clientapp.run( host='0.0.0.0', port=port_num, debug = True, ssl_context=context)
