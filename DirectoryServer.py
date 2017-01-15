@@ -7,7 +7,8 @@ import sys
 from OpenSSL import SSL
 import sqlite3
 
-DB_NAME = "fileDirectory.db"
+FILE_DIRECTORY_DB_NAME = "fileDirectory.db"
+FILE_SERVERS_DB_NAME = "fileServers.db"
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/DIRECTORY_SERVER/udara.com.crt')
 key = os.path.join(os.path.dirname(__file__), './resources/DIRECTORY_SERVER/udara.com.key')
@@ -19,6 +20,68 @@ dirserverapp = Flask(__name__)
 def index():
     return 'DirectoryServer is running!'
 
+@dirserverapp.route('/DirectoryServer/newFileServerNotification', methods=['POST'])
+def enterNewFileServer():
+	print (request.json)
+	if not request.json:
+		abort(400)
+	else:
+		conn = sqlite3.connect(FILE_SERVERS_DB_NAME)
+		cursor = conn.cursor()
+		infoDict = request.json
+		serverid = infoDict['id']
+		cursor.execute("SELECT server_id FROM listOfFileServers WHERE server_id=?", (serverid,))
+		result = cursor.fetchall()
+		if not result:
+			print ("This entry does not already exist. Entering...")
+			serverurl = infoDict['base_url']
+			params = (serverid, serverurl)
+			sql_command = "INSERT INTO listOfFileServers VALUES (?, ?)"
+			cursor.execute(sql_command, params)
+			conn.commit()
+
+			print ("listOfFileServers")
+			printDB("listOfFileServers", FILE_SERVERS_DB_NAME)
+			return "Successfully saved to file server database!", 201
+		else:
+			print ("This entry already exists. Aborting..")
+			print (result)
+			abort(400)
+
+#two ways to request a server, 1) request any; you dont care which and 2) request a specific one by their id and get url back
+@dirserverapp.route('/DirectoryServer/requestAServer', methods=['GET'])
+def requestAServer():
+	print (request.json)
+	if not request.json: #random file server requested
+		connection = sqlite3.connect(FILE_SERVERS_DB_NAME)
+		cursor = connection.cursor()
+		cursor.execute("SELECT * FROM listOfFileServers ORDER BY RANDOM() LIMIT 1")
+		result = cursor.fetchall()
+		print (result)
+		dictResponse = jsonify({'server_id': result[0][0], 'base_url': result[0][1]})
+		print (dictResponse)
+		return make_response(dictResponse, 200)
+	else: #specific file server requested
+		infoDict = request.json
+		connection = sqlite3.connect(FILE_SERVERS_DB_NAME)
+		cursor = connection.cursor()
+		fileServerId = infoDict['server_id']
+		getThisServer = infoDict['selectThis']
+		if (getThisServer == True): #server wants back the url for this specific id
+			cursor.execute("SELECT base_url FROM listOfFileServers WHERE server_id=?", (fileServerId,))
+			result = cursor.fetchall()
+			dictResponse = jsonify({'base_url': result[0][0]})
+			print (dictResponse)
+			return make_response(dictResponse, 200)
+		else: #server does not want back the url for this id
+			cursor.execute("SELECT server_id, base_url FROM listOfFileServers WHERE server_id!=? ORDER BY RANDOM() LIMIT 1", (fileServerId,))
+			result = cursor.fetchall()
+			print (result)
+			dictResponse = jsonify({'server_id' : result[0][0], 'base_url': result[0][1]})
+			print (dictResponse)
+			return make_response(dictResponse, 200)
+
+
 @dirserverapp.route('/DirectoryServer/CheckHash', methods=['GET'])
 def checkTimeStamp():
 	if not request.json:
@@ -27,7 +90,7 @@ def checkTimeStamp():
 		checkDict = request.json
 		file_name = checkDict['filename']
 		hashedString = checkDict['hash']
-		connection = sqlite3.connect(DB_NAME)
+		connection = sqlite3.connect(FILE_DIRECTORY_DB_NAME)
 		cursor = connection.cursor()
 
 		print ("fileDirectory")
@@ -57,7 +120,7 @@ def getServerID():
 		dataDict = request.json
 		filename = dataDict['filename']
 		master = dataDict['masterNeeded']
-		connection = sqlite3.connect(DB_NAME)
+		connection = sqlite3.connect(FILE_DIRECTORY_DB_NAME)
 		cursor = connection.cursor()
 		if master == True:
 			cursor.execute("SELECT master_server_id FROM fileDirectory WHERE filename=?", (filename,))
@@ -76,7 +139,7 @@ def updateDB():
 		abort(400)
 	else:
 		newFilesDict = request.json
-		conn = sqlite3.connect(DB_NAME)
+		conn = sqlite3.connect(FILE_DIRECTORY_DB_NAME)
 		cursor = conn.cursor()
 
 		hashedFile = newFilesDict['hash']
@@ -87,7 +150,7 @@ def updateDB():
 		conn.commit()
 
 		print ("fileDirectory")
-		printDB()
+		printDB("fileDirectory", FILE_DIRECTORY_DB_NAME)
 
 		return "Successfully updated the database!", 201
 		
@@ -98,7 +161,7 @@ def addToDB():
 		abort(400)
 	else:
 		newFilesDict = request.json
-		conn = sqlite3.connect(DB_NAME)
+		conn = sqlite3.connect(FILE_DIRECTORY_DB_NAME)
 		cursor = conn.cursor()
 
 		master_id = newFilesDict['master_id']
@@ -112,14 +175,15 @@ def addToDB():
 		conn.commit()
 
 		print ("fileDirectory")
-		printDB()
+		printDB("fileDirectory", FILE_DIRECTORY_DB_NAME)
 
 		return "Successfully saved to database!", 201
 	
-def printDB():
+def printDB(nameOfDB, DB_NAME):
 	connection = sqlite3.connect(DB_NAME)
 	cursor = connection.cursor()
-	cursor.execute("SELECT * FROM fileDirectory;")
+	query = "SELECT * FROM {}".format(nameOfDB)
+	cursor.execute(query)
 	result = cursor.fetchall()
 	print ("===")
 	for r in result:
@@ -128,15 +192,37 @@ def printDB():
 
 
 def initDB():
-	filenameMaster = "%s" % DB_NAME
+	filenameMaster = "%s" % FILE_DIRECTORY_DB_NAME
 	if (not os.path.isfile(filenameMaster)):
-		connectionMaster = sqlite3.connect("fileDirectory.db")
+		print ("Creating DB %s as it does not exist." % filenameMaster)
+		connectionMaster = sqlite3.connect(filenameMaster)
 		cursorMaster = connectionMaster.cursor()
 		sql_command = """CREATE TABLE fileDirectory ( master_server_id VARCHAR(100) , filename VARCHAR(30) PRIMARY KEY, hash VARCHAR (200), replicate_server_id VARCHAR(100));"""
 		cursorMaster.execute(sql_command)
 		connectionMaster.commit()
 	else: #read from what is already in db
-		printDB()
+		print ("DB %s already exits:" % filenameMaster)
+		printDB("fileDirectory", FILE_DIRECTORY_DB_NAME)
+
+	filenameFileSers = "%s" % FILE_SERVERS_DB_NAME
+	if (not os.path.isfile(filenameFileSers)):
+		print ("Creating DB %s as it does not exist" % filenameFileSers)
+		connectionMaster = sqlite3.connect(filenameFileSers)
+		cursorMaster = connectionMaster.cursor()
+		sql_command = """CREATE TABLE listOfFileServers ( server_id VARCHAR(100) PRIMARY KEY, base_url VARCHAR(200));"""
+		cursorMaster.execute(sql_command)
+		connectionMaster.commit()
+	else: #drop the contents (assuming when dir server was last dropped, all file servers were dropped.)
+		# print ("Dropping DB %s as it already exists" % filenameFileSers)
+		# connection = sqlite3.connect(FILE_SERVERS_DB_NAME)
+		# cursor = connection.cursor()
+		# cursor.execute("""DROP TABLE listOfFileServers""")
+		# print ("Creating DB %s as it was dropped." % filenameFileSers)
+		# sql_command = """CREATE TABLE listOfFileServers ( server_id VARCHAR(100) PRIMARY KEY, base_url VARCHAR(200));"""
+		# cursor.execute(sql_command)
+		# connection.commit()
+		printDB("listOfFileServers", FILE_SERVERS_DB_NAME) 
+
 if __name__ == '__main__':
 	initDB()
 

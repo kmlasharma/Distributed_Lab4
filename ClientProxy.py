@@ -21,7 +21,7 @@ key = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.key'
 CLIENT_CACHE_PATH = "./CLIENT_CACHE_ONE/"
 LOCAL_STORAGE = "./LOCAL_STORAGE/"
 commands_dict = {"1" : "Read a File", "2" : "Request Write Access to a File", "3" : "Write to a File", "4": "Upload a new File"}
-fileServerAddresses = {'1' : 'https://0.0.0.0:5050/Server/', '2' : 'https://0.0.0.0:5060/Server/'}
+fileServerAddresses = {}
 directoryServerAddress = "https://0.0.0.0:5010/DirectoryServer/"
 DB_NAME_USERS = "Users.db"
 DB_NAME_LOCKS = "Locks.db"
@@ -49,15 +49,24 @@ def uploadFile(cmd): #num filename username
 	print ("Cached file %s" % filenameToUpload)
 
 	#send file to main file server
-	# modTime = getLastModified(CLIENT_CACHE_PATH + filenameToUpload)
 	hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filenameToUpload,'rb').read()).hexdigest()
-	url = fileServerAddresses['1']
+	#get the address of a fileserver that is available for uploading
+	url = directoryServerAddress + "requestAServer"
+	response = requests.get(url, verify=False)
+	content = response.content
+	responseDict = json.loads(content.decode())
+	print (responseDict)
+	serverID = responseDict["server_id"]
+	serverURL = responseDict["base_url"]
+	if (not serverID in fileServerAddresses):
+		fileServerAddresses[serverID] = serverURL
+
 	headers = {'content-type': 'application/json'}
 	files = {
 		'file' : (filenameToUpload, open(LOCAL_STORAGE + filenameToUpload, 'rb'))
 		}
 	data = {'title' : filenameToUpload, 'id' : fileID, 'hash' : hashedFile}
-	response = requests.post(url + "NewFile", files=files, data=data, verify=False)
+	response = requests.post(serverURL + "/NewFile", files=files, data=data, verify=False)
 	print (response.content)
 	filenameToHash[filenameToUpload] = hashedFile
 
@@ -81,13 +90,24 @@ def writeToFile(cmd): #num filename username
 			hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filename,'rb').read()).hexdigest()
 			# get the master id holding this file
 			masterFileServerID = getServerID(filename, True)
-			url = fileServerAddresses[masterFileServerID]
+			if (masterFileServerID not in fileServerAddresses): #send a request to get it
+				url = directoryServerAddress + "requestAServer"
+				dataDict = {'server_id': masterFileServerID, 'selectThis' : True}
+				response = requests.get(url, json=dataDict, verify=False)
+				content = response.content
+				responseDict = json.loads(content.decode())
+				print (responseDict)
+				url = responseDict["base_url"]
+				fileServerAddresses[masterFileServerID] = url
+			else:	
+				url = fileServerAddresses[masterFileServerID]
+
 			files = {
 				'file' : (filename, open(CLIENT_CACHE_PATH + filename, 'rb'))
 				}
 			data = {'title' : filename, 'id' : fileID, 'hash' : hashedFile}
 			print ("Informing master file server of an updated File")
-			response = requests.post(url + "UpdateFile", files=files, data=data, verify=False)
+			response = requests.post(url + "/UpdateFile", files=files, data=data, verify=False)
 			print (response.content)
 			#relinquish lock on file
 			deleteLock(filename)
@@ -149,8 +169,18 @@ def getServerID(filename, masterNeededValue):
 
 def getFileFromFileServer(serverID, filename):
 	data = {'filename' : filename}
-	url = fileServerAddresses[serverID]
-	response = requests.get(url + "retrieveFile", json=data, verify=False)
+	if (serverID not in fileServerAddresses): #send a request to get it
+		url = directoryServerAddress + "requestAServer"
+		dataDict = {'server_id': serverID, 'selectThis' : True}
+		response = requests.get(url, json=dataDict, verify=False)
+		content = response.content
+		responseDict = json.loads(content.decode())
+		print (responseDict)
+		url = responseDict["base_url"]
+		fileServerAddresses[serverID] = url
+	else:	
+		url = fileServerAddresses[serverID]
+	response = requests.get(url + "/retrieveFile", json=data, verify=False)
 	print (response.content)
 
 def checkIfUpToDate(hashedFile, filename):
