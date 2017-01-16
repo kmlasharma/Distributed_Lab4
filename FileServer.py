@@ -32,14 +32,24 @@ def uploadNewFileFromClient():
 	else:
 		newFile = request.files["file"]
 		filename = request.form['title']
-		fileID = request.form['id']
-		hashedFile = request.form['hash']
-		print (hashedFile)
-		path = FILE_FOLDER + filename
-		newFile.save(path)
-		print ("Successfully saved %s on server %s" % (filename, server_id))
-		makeReplicate(newFile, filename, fileID, hashedFile)
-		return "Successfully saved master copy onto server %s" % server_id, 201
+		if (not checkIfFileExists(filename)):
+			fileID = request.form['id']
+			hashedFile = request.form['hash']
+			print (hashedFile)
+			path = FILE_FOLDER + filename
+			newFile.save(path)
+			print ("Successfully saved %s on server %s" % (filename, server_id))
+			makeReplicate(newFile, filename, fileID, hashedFile)
+			return "Successfully saved master copy onto server %s" % server_id, 201
+		else:
+			return "This file already exists", 304
+
+def checkIfFileExists(fname):
+	if (os.path.isfile(FILE_FOLDER + fname)):
+		return True
+	else:
+		return False
+
 
 @fileserver.route('/Server/UpdateFile', methods=["POST"])
 def updateFileFromClient():
@@ -138,6 +148,7 @@ def makeReplicate(fileToReplicate, filename, fileID, hashedFile):
 
 		response = requests.post(directoryServerAddress + "/NewFiles", json=fileSaved, verify=False)
 		print (response)
+		
 
 
 @fileserver.route('/Server/retrieveFile', methods=['GET'])

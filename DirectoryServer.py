@@ -42,7 +42,7 @@ def enterNewFileServer():
 
 			print ("listOfFileServers")
 			printDB("listOfFileServers", FILE_SERVERS_DB_NAME)
-			return "Successfully saved to file server database!", 201
+			return "Successfully saved to file server database!", 200
 		else:
 			print ("This entry already exists. Aborting..")
 			print (result)
@@ -152,7 +152,7 @@ def updateDB():
 		print ("fileDirectory")
 		printDB("fileDirectory", FILE_DIRECTORY_DB_NAME)
 
-		return "Successfully updated the database!", 201
+		return "Successfully updated the database!", 200
 		
 
 @dirserverapp.route('/DirectoryServer/NewFiles', methods=['POST'])
@@ -167,8 +167,12 @@ def addToDB():
 		title = newFilesDict['title']
 		cursor.execute("SELECT master_server_id FROM fileDirectory WHERE filename=?", (title,))
 		result = cursor.fetchall()
-		fileserverid_retrieved = result[0][0]
 		print (result)
+		if (not result):
+			fileserverid_retrieved = None
+		else:
+			fileserverid_retrieved = result[0][0]
+			
 		print (fileserverid_retrieved)
 		if (fileserverid_retrieved is None): #if filename is null, doesnt exist, so insert it
 			master_id = newFilesDict['master_id']
@@ -178,9 +182,9 @@ def addToDB():
 			sql_command = "INSERT INTO fileDirectory VALUES (?, ?, ?, ?)"
 			cursor.execute(sql_command, params)
 			conn.commit()
-			print ("fileDirectory")
+			print ("fileDirectory:")
 			printDB("fileDirectory", FILE_DIRECTORY_DB_NAME)
-			return "Successfully saved to database!", 201
+			return "Successfully saved to database!", 200
 		else:
 			return ("This file %s exists on server %s" % (title, fileserverid_retrieved)), 304
 	

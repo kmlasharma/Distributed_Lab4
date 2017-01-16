@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 from flask import abort
 from flask import make_response
+from flask import Response
 import requests
 import os
 import sys
@@ -14,6 +15,7 @@ from datetime import datetime
 import hashlib
 import sqlite3
 import argparse
+import bcolours
 
 
 context = SSL.Context(SSL.SSLv23_METHOD)
@@ -27,19 +29,22 @@ fileServerAddresses = {}
 directoryServerAddress = "https://0.0.0.0:5050/DirectoryServer/"
 DB_NAME_USERS = "Users.db"
 DB_NAME_LOCKS = "Locks.db"
-loggedIn = []
 clientapp = Flask(__name__)
 filenameToHash = {}
 fileID = 0
+
+#ansi configs
+GREEN_OPENING = "\033[1;32;40m"
+GREEN_CLOSING = "\033[0;37;40m"
+RED_OPENING = "\033[0m 1;31;40m"
+RED_CLOSING = "\033[0;31;47m"
+
 
 @clientapp.route('/DISTRIBUTED_LAB4')
 def index():
     return 'Flask is running!'
 
-def uploadFile(cmd): #num filename username
-	if (checkLoggedIn(cmd[2]) == False):
-		print ("Unable to carry out upload task. User is not logged in.")
-		return
+def uploadFile(cmd): #num filename
 	filenameToUpload = cmd[1]
 	for filename in os.listdir(CLIENT_CACHE_PATH):
 		if filename == filenameToUpload:
@@ -69,7 +74,7 @@ def uploadFile(cmd): #num filename username
 		}
 	data = {'title' : filenameToUpload, 'id' : fileID, 'hash' : hashedFile}
 	response = requests.post(serverURL + "/NewFile", files=files, data=data, verify=False)
-	if (response.code == 201):
+	if (response.status_code == 201):
 		print (response.content)
 		filenameToHash[filenameToUpload] = hashedFile
 	else: 
@@ -77,10 +82,7 @@ def uploadFile(cmd): #num filename username
 		print ("This file could not be saved.")
 
 #here the only way to write to a file is that a user has already got a lock on it from req write
-def writeToFile(cmd): #num filename username
-	if (checkLoggedIn(cmd[2]) == False):
-		print ("Unable to carry out upload task. User is not logged in.")
-		return
+def writeToFile(cmd): #num filename 
 	filename = cmd[1]
 	username = cmd[2]
 	#check if file exists in lock db
@@ -131,10 +133,7 @@ def deleteLock(filename):
 	connection.commit()
 
 
-def requestWriteAccess(cmd): #num filename username
-	if (checkLoggedIn(cmd[2]) == False):
-		print ("Unable to carry out request to write; User is not logged in.")
-		return
+def requestWriteAccess(cmd): #num filename
 	filename = cmd[1]
 	username = cmd[2]
 	file_name = queryDB(DB_NAME_LOCKS, "SELECT filename FROM locks WHERE filename=?", filename)
@@ -183,7 +182,6 @@ def getFileFromFileServer(serverID, filename):
 		response = requests.get(url, json=dataDict, verify=False)
 		content = response.content
 		responseDict = json.loads(content.decode())
-		print (responseDict)
 		url = responseDict["base_url"]
 		fileServerAddresses[serverID] = url
 	else:	
@@ -206,32 +204,34 @@ def checkIfUpToDate(hashedFile, filename):
 			'hash' : hashedFile
 		}
 	response = requests.get(directoryServerAddress + "CheckHash", json=checkOutdated, verify=False)
-	content = response.content
-	responseDict = json.loads(content.decode())
-	print (responseDict)
-	upToDate = responseDict["upToDate"]
-	return upToDate
+	if (response.status_code != 200):
+		printColour("red", "ERROR: Could not verify if file is up to date or not.")
+	else:
+		content = response.content
+		responseDict = json.loads(content.decode())
+		upToDate = responseDict["upToDate"]
+		return upToDate
 
 
 def retrieveReadFile(cmd):
-	if (checkLoggedIn(cmd[2]) == False):
-		print ("Unable to carry out read task. User is not logged in.")
-		return
 	filenameToRead = cmd[1]
 	if(os.path.isfile(CLIENT_CACHE_PATH + filenameToRead)):
-		print ("File exists in client's cache.")
+		printColour("green", "File %s exists in client's cache." % filenameToRead)
 		hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filenameToRead,'rb').read()).hexdigest()
 		upToDate = checkIfUpToDate(hashedFile, filenameToRead)
 	else:
-		print ("File does not exist in client cache.")
+		printColour("yellow", "File %s does not exist in client's cache. Will retrieve it from file Server." % filenameToRead)
 		upToDate = False
 
 	if upToDate == True: #cache copy is up to date, so can transfer info from cache to user's local storage
 		copyfile(CLIENT_CACHE_PATH + filenameToRead, LOCAL_STORAGE + filenameToRead)
-		print ("Transferred cached file %s" % filenameToRead)
+		printColour("green", "File %s was also up to date and is now in User's Local Storage." % filenameToRead)
 	else: # request server holding the file from dir ser, then download file from file server (note when the cache's copy is out of date we assume the master file server and replicate file server is up to date)
+		printColour("yellow", "File %s was not up to date.\nRetrieving ID of filesever to query..." % filenameToRead)
 		serverID = getServerID(filenameToRead, False)
+		printColour("yellow", "Fetching file from server %s..." % serverID)
 		getFileFromFileServer(serverID, filenameToRead)
+		printColour("green", "Complete. File is now in Local Stoage.")
 
 
 
@@ -253,41 +253,34 @@ def queryDB(dbName, query, param):
 		return results
 
 
-def checkLoggedIn(username):
-	print (loggedIn)
-	print (username)
-	if username in loggedIn:
-		return True
-	else:
-		return False
-
 def handleUser(username, password):
 	user_name = queryDB(DB_NAME_USERS, "SELECT username FROM users WHERE username=?", username)
 	connection = sqlite3.connect(DB_NAME_USERS)
 	cursor = connection.cursor()
 
-	print (user_name)
 	if (user_name == username):
-		print ("The user exists")
 		hashedPassword = hashlib.md5(password.encode('utf-8')).hexdigest()
 		resultPassword = queryDB(DB_NAME_USERS, "SELECT password FROM users WHERE username=?", username)
 		if (resultPassword == hashedPassword):
-			print ("The user provided correct credentials")
-			loggedIn.append(user_name)
+			printColour("green", "The user provided correct credentials")
+			return True
 		else:
-			print ("The user provided the wrong password")
-			print ("The db password: %s" % resultPassword)
-			print ("The user's: %s" % hashedPassword)
+			printColour("red", "The user provided the wrong password.")
+			return False
 	else:
 		print ("The user does not exist in DB. Signing up user...")
 		hashedPassword = hashlib.md5(password.encode('utf-8')).hexdigest()
 		params = (username, hashedPassword)
 		sql_command = "INSERT INTO users VALUES (?, ?)"
 		insertIntoDB(DB_NAME_USERS, params, sql_command)
-		loggedIn.append(username)
-		print ("User %s signed up and logged in." % username)
+		printColour("green", "User %s signed up and logged in." % username)
+		return True
 
-
+def printDB(dbName, result):
+	printColour("bold", "=== %s ===" % dbName)
+	for r in result:
+		printColour("bold", str(r))
+	printColour("bold", "=============")
 
 def initDB():
 	#create user account db
@@ -302,10 +295,7 @@ def initDB():
 		cursor = connection.cursor()
 		cursor.execute("SELECT * FROM users;")
 		result = cursor.fetchall()
-		print ("=USER ACCOUNTS=")
-		for r in result:
-			print (r)
-		print ("===")
+		printDB("USERS SIGNED UP", result)
 
 	#create lock db
 	if (not os.path.isfile(DB_NAME_LOCKS)):
@@ -319,13 +309,9 @@ def initDB():
 		cursor = connection.cursor()
 		cursor.execute("SELECT * FROM locks;")
 		result = cursor.fetchall()
-		print ("=CURRENT LOCKS=")
-		for r in result:
-			print (r)
-		print ("===")
+		printDB("CURRENT LOCKS", result)
 
 def initCacheAndReadings():
-	
 	if not os.path.isdir(CLIENT_CACHE_PATH):
 		os.mkdir(CLIENT_CACHE_PATH)
 	else: #read from it and initialise hashes
@@ -334,8 +320,17 @@ def initCacheAndReadings():
 			filenameToHash[filename] = hashedFile
 		print (filenameToHash)
 
-
-
+def printColour(col, text):
+	if (col == "red"):
+		print(bcolours.bcolours.FAIL + text + bcolours.bcolours.ENDC)
+	elif(col == "purple"):
+		print(bcolours.bcolours.PURPLE + text + bcolours.bcolours.ENDC)
+	elif(col == "green"):
+		print(bcolours.bcolours.OKGREEN + text + bcolours.bcolours.ENDC)
+	elif(col == "yellow"):
+		print(bcolours.bcolours.WARNING + text + bcolours.bcolours.ENDC)
+	elif(col == "bold"):
+		print(bcolours.bcolours.BOLD + text + bcolours.bcolours.ENDC)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Client Proxy Server requires an ID (1-100) and a port number (5000 - 5040)')
@@ -352,27 +347,34 @@ if __name__ == '__main__':
 	CLIENT_CACHE_PATH = CLIENT_CACHE_PATH % (client_id)
 	initCacheAndReadings()
 	initDB()
-	print ("== LOG IN ==")
-	loginName = input("User Name: ")
-	password = input("Password: ")
-	handleUser(loginName, password)
-	while 1:
-		print ("number filename username")
-		cmd = input("Commands: " + str(commands_dict) + "\n")
-		cmd = cmd.split(" ")
-		if (cmd[0] == "1"):
-			print ("Client wants to read")
-			retrieveReadFile(cmd)
-		elif (cmd[0] == "2"):
-			print ("Client wants to request write access")
-			requestWriteAccess(cmd)
-		elif (cmd[0] == "3"):
-			print ("Client wants to write to a file")
-			writeToFile(cmd)
-		elif (cmd[0] == "4"):
-			print ("Client wants to upload")
-			uploadFile(cmd)
+	attemptSuccessful = False
+	attempts = 3
+	printColour("purple", "=== LOG IN ===")
+	while(not attemptSuccessful and attempts > 0):
+		printColour("purple", "%d attempts left." % attempts)
+		loginName = input("User Name: ")
+		password = input("Password: ")
+		attemptSuccessful = handleUser(loginName, password)
+		attempts = attempts - 1
 
-
-	context = (cer, key)
-	clientapp.run( host='0.0.0.0', port=port_num, debug = True, ssl_context=context)
+	if (attemptSuccessful):
+		while 1:
+			printColour("purple", "Format: 'Number Filename' (file must exist in Local Storage Folder)")
+			cmd = input("Commands: " + str(commands_dict) + "\n")
+			cmd = cmd.split(" ")
+			if (cmd[0] == "1"):
+				printColour("purple", "Client wants to read")
+				retrieveReadFile(cmd)
+			elif (cmd[0] == "2"):
+				printColour("purple", "Client wants to request write access")
+				requestWriteAccess(cmd)
+			elif (cmd[0] == "3"):
+				printColour("purple", "Client wants to write to a file")
+				writeToFile(cmd)
+			elif (cmd[0] == "4"):
+				printColour("purple", "Client wants to upload")
+				uploadFile(cmd)
+		context = (cer, key)
+		clientapp.run( host='0.0.0.0', port=port_num, debug = True, ssl_context=context)
+	else:
+		sys.exit("Log in unsuccessful. Relaunch Client Proxy")
