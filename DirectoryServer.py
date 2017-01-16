@@ -164,20 +164,25 @@ def addToDB():
 		conn = sqlite3.connect(FILE_DIRECTORY_DB_NAME)
 		cursor = conn.cursor()
 
-		master_id = newFilesDict['master_id']
 		title = newFilesDict['title']
-		hashedFile = newFilesDict['hash']
-		replicate_id = newFilesDict['replicate_id']
-
-		params = (master_id, title, hashedFile, replicate_id)
-		sql_command = "INSERT INTO fileDirectory VALUES (?, ?, ?, ?)"
-		cursor.execute(sql_command, params)
-		conn.commit()
-
-		print ("fileDirectory")
-		printDB("fileDirectory", FILE_DIRECTORY_DB_NAME)
-
-		return "Successfully saved to database!", 201
+		cursor.execute("SELECT master_server_id FROM fileDirectory WHERE filename=?", (title,))
+		result = cursor.fetchall()
+		fileserverid_retrieved = result[0][0]
+		print (result)
+		print (fileserverid_retrieved)
+		if (fileserverid_retrieved is None): #if filename is null, doesnt exist, so insert it
+			master_id = newFilesDict['master_id']
+			hashedFile = newFilesDict['hash']
+			replicate_id = newFilesDict['replicate_id']
+			params = (master_id, title, hashedFile, replicate_id)
+			sql_command = "INSERT INTO fileDirectory VALUES (?, ?, ?, ?)"
+			cursor.execute(sql_command, params)
+			conn.commit()
+			print ("fileDirectory")
+			printDB("fileDirectory", FILE_DIRECTORY_DB_NAME)
+			return "Successfully saved to database!", 201
+		else:
+			return ("This file %s exists on server %s" % (title, fileserverid_retrieved)), 304
 	
 def printDB(nameOfDB, DB_NAME):
 	connection = sqlite3.connect(DB_NAME)

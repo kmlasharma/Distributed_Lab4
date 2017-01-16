@@ -69,8 +69,12 @@ def uploadFile(cmd): #num filename username
 		}
 	data = {'title' : filenameToUpload, 'id' : fileID, 'hash' : hashedFile}
 	response = requests.post(serverURL + "/NewFile", files=files, data=data, verify=False)
-	print (response.content)
-	filenameToHash[filenameToUpload] = hashedFile
+	if (response.code == 201):
+		print (response.content)
+		filenameToHash[filenameToUpload] = hashedFile
+	else: 
+		print (response.content)
+		print ("This file could not be saved.")
 
 #here the only way to write to a file is that a user has already got a lock on it from req write
 def writeToFile(cmd): #num filename username
@@ -137,7 +141,10 @@ def requestWriteAccess(cmd): #num filename username
 	print(file_name)
 	if (file_name): #exists in db
 		user_name = queryDB(DB_NAME_LOCKS, "SELECT username FROM locks WHERE filename=?", filename)
-		print ("This file is already locked by a different user (%s). Please try again later." % user_name)
+		if (user_name != username):
+			print ("This file is already locked by a different user (%s). Please try again later." % user_name)
+		else:
+			print ("You have already locked this file.")
 	else: #ie not in lock server, so put in lock and give them file (check cache)
 		params = (filename, username)
 		sql_command = "INSERT INTO locks VALUES (?, ?)"
@@ -189,6 +196,8 @@ def getFileFromFileServer(serverID, filename):
 	#update file in local storage
 	print ("Transferring file to local storage...")
 	copyfile(LOCAL_STORAGE + filename, CLIENT_CACHE_PATH + filename)
+	print ("Storing hash of file...")
+	hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filename,'rb').read()).hexdigest()
 
 
 def checkIfUpToDate(hashedFile, filename):
