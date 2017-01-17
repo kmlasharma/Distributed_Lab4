@@ -28,7 +28,7 @@ def index():
 @fileserver.route('/Server/NewFile', methods=["POST"])
 def uploadNewFileFromClient():
 	if not request.files:
-		return make_response(jsonify({'error': 'Not found'}), 404)
+		abort(400)
 	else:
 		newFile = request.files["file"]
 		filename = request.form['title']
@@ -40,7 +40,7 @@ def uploadNewFileFromClient():
 			newFile.save(path)
 			print ("Successfully saved %s on server %s" % (filename, server_id))
 			makeReplicate(newFile, filename, fileID, hashedFile)
-			return "Successfully saved master copy onto server %s" % server_id, 201
+			return "Successfully saved master copy onto server %s" % server_id, 200
 		else:
 			return "This file already exists", 304
 
@@ -54,7 +54,7 @@ def checkIfFileExists(fname):
 @fileserver.route('/Server/UpdateFile', methods=["POST"])
 def updateFileFromClient():
 	if not request.files:
-		return make_response(jsonify({'error': 'Not found'}), 404)
+		abort(400)
 	else:
 		newFile = request.files["file"]
 		filename = request.form['title']
@@ -65,7 +65,7 @@ def updateFileFromClient():
 		newFile.save(path)
 		print ("Successfully updated %s on server %s" % (filename, server_id))
 		updateReplicate(newFile, filename, fileID, hashedFile)
-		return "Successfully saved master copy onto server %s" % server_id, 201
+		return "Successfully saved master copy onto server %s" % server_id, 200
 
 #send the file to other server for replication
 def updateReplicate(fileToReplicate, filename, fileID, hashedFile):
@@ -77,7 +77,16 @@ def updateReplicate(fileToReplicate, filename, fileID, hashedFile):
 	responseDict = json.loads(content.decode())
 	print (responseDict)
 	serverIdToQuery = responseDict["ID"]
-	url = fileServerAddresses[serverIdToQuery]
+	if serverIdToQuery not in fileServerAddresses:
+		url = directoryServerAddress + "/requestAServer"
+		dataDict = {'server_id': serverIdToQuery, 'selectThis' : True}
+		response = requests.get(url, json=dataDict, verify=False)
+		content = response.content
+		responseDict = json.loads(content.decode())
+		url = responseDict["base_url"]
+		fileServerAddresses[serverIdToQuery] = url
+	else:
+		url = fileServerAddresses[serverIdToQuery]
 
 	headers = {'content-type': 'application/json'}
 	files = {

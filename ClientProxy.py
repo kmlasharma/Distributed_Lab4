@@ -40,73 +40,80 @@ RED_OPENING = "\033[0m 1;31;40m"
 RED_CLOSING = "\033[0;31;47m"
 
 
-@clientapp.route('/DISTRIBUTED_LAB4')
-def index():
-    return 'Flask is running!'
 
 def uploadFile(cmd): #num filename
 	filenameToUpload = cmd[1]
 	for filename in os.listdir(CLIENT_CACHE_PATH):
 		if filename == filenameToUpload:
-			print ("Error! File already exists. Please select 'Write'.")
+			printColour("red", "Error: File already exists. Please select 'Write'.")
 			return 
 
 	#cache file
 	copyfile(LOCAL_STORAGE + filenameToUpload, CLIENT_CACHE_PATH + filenameToUpload)
-	print ("Cached file %s" % filenameToUpload)
+	printColour("green", "Cached file %s." % filenameToUpload)
 
 	#send file to main file server
 	hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filenameToUpload,'rb').read()).hexdigest()
 	#get the address of a fileserver that is available for uploading
+	printColour("yellow", "Selecting a fileserver to upload...")
 	url = directoryServerAddress + "requestAServer"
 	response = requests.get(url, verify=False)
-	content = response.content
-	responseDict = json.loads(content.decode())
-	print (responseDict)
-	serverID = responseDict["server_id"]
-	serverURL = responseDict["base_url"]
-	if (not serverID in fileServerAddresses):
-		fileServerAddresses[serverID] = serverURL
+	if (response.status_code != 200):
+		printColour("red", "ERROR occured in trying to retrieve file server ID")
+	else:
+		printColour("green", "Retrieved Server ID to upload to.")
+		content = response.content
+		responseDict = json.loads(content.decode())
+		serverID = responseDict["server_id"]
+		serverURL = responseDict["base_url"]
+		if (not serverID in fileServerAddresses):
+			fileServerAddresses[serverID] = serverURL
 
-	headers = {'content-type': 'application/json'}
-	files = {
-		'file' : (filenameToUpload, open(LOCAL_STORAGE + filenameToUpload, 'rb'))
-		}
-	data = {'title' : filenameToUpload, 'id' : fileID, 'hash' : hashedFile}
-	response = requests.post(serverURL + "/NewFile", files=files, data=data, verify=False)
-	if (response.status_code == 201):
-		print (response.content)
-		filenameToHash[filenameToUpload] = hashedFile
-	else: 
-		print (response.content)
-		print ("This file could not be saved.")
+		headers = {'content-type': 'application/json'}
+		files = {
+			'file' : (filenameToUpload, open(LOCAL_STORAGE + filenameToUpload, 'rb'))
+			}
+		data = {'title' : filenameToUpload, 'id' : fileID, 'hash' : hashedFile}
+		printColour("yellow", "Sending file to fileserver...")
+		response = requests.post(serverURL + "/NewFile", files=files, data=data, verify=False)
+		if (response.status_code == 200):
+			printColour("green", "Success. File uploaded to fileserver %s." % serverID)
+			filenameToHash[filenameToUpload] = hashedFile
+		elif (response.status_code == 304):
+			printColour("red", "Could not upload file to server, as it already contains a copy of this file. Please select 'Write'")
+		else:
+			printColour("red", "Error occured in trying to upload file.")
 
 #here the only way to write to a file is that a user has already got a lock on it from req write
 def writeToFile(cmd): #num filename 
 	filename = cmd[1]
-	username = cmd[2]
 	#check if file exists in lock db
 	file_name = queryDB(DB_NAME_LOCKS, "SELECT filename FROM locks WHERE filename=?", filename)
 	print(file_name)
 	if (file_name): #exists in db
 		user_name = queryDB(DB_NAME_LOCKS, "SELECT username FROM locks WHERE filename=?", filename)
-		if (user_name == username): #correct person is requesting to use their lock capabilities to write
-			print ("You have a pending lock on this file - only YOU can write to it.")
+		if (user_name == this_user): #correct person is requesting to use their lock capabilities to write
+			printColour("yellow", "Beginning to perform write to file...")
 			#post new written file to file servers which will update dir ser
-			print ("Caching file...")
+			printColour("yellow", "Caching file locally...")
 			copyfile(LOCAL_STORAGE + filename, CLIENT_CACHE_PATH + filename)
 			hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filename,'rb').read()).hexdigest()
 			# get the master id holding this file
 			masterFileServerID = getServerID(filename, True)
 			if (masterFileServerID not in fileServerAddresses): #send a request to get it
+				printColour("yellow", "Retrieving ID of server which holds this file...")
 				url = directoryServerAddress + "requestAServer"
 				dataDict = {'server_id': masterFileServerID, 'selectThis' : True}
 				response = requests.get(url, json=dataDict, verify=False)
-				content = response.content
-				responseDict = json.loads(content.decode())
-				print (responseDict)
-				url = responseDict["base_url"]
-				fileServerAddresses[masterFileServerID] = url
+				if (response.status_code != 200):
+					printColour("red", "ERROR occured in trying to retrieve file server ID")
+					return
+				else:
+					content = response.content
+					responseDict = json.loads(content.decode())
+					url = responseDict["base_url"]
+					fileServerAddresses[masterFileServerID] = url
+					printColour("green", "Successfully retrieved server ID.")
 			else:	
 				url = fileServerAddresses[masterFileServerID]
 
@@ -114,11 +121,15 @@ def writeToFile(cmd): #num filename
 				'file' : (filename, open(CLIENT_CACHE_PATH + filename, 'rb'))
 				}
 			data = {'title' : filename, 'id' : fileID, 'hash' : hashedFile}
-			print ("Informing master file server of an updated File")
+			printColour("green", "Informing master file server of an updated File")
 			response = requests.post(url + "/UpdateFile", files=files, data=data, verify=False)
-			print (response.content)
-			#relinquish lock on file
-			deleteLock(filename)
+			if (response.status_code != 200):
+				printColour("red", "ERROR occured in trying to notify file server of new file.")
+			else:
+				printColour("green", "File server updated successfully.")
+				#relinquish lock on file
+				deleteLock(filename)
+				printColour("green", "Lock relinquished.")
 		else:
 			print ("This file is already locked by a different user (%s). You cannot write to it." % user_name)
 	else: #ie not in lock service
@@ -135,44 +146,51 @@ def deleteLock(filename):
 
 def requestWriteAccess(cmd): #num filename
 	filename = cmd[1]
-	username = cmd[2]
+	username = this_user
 	file_name = queryDB(DB_NAME_LOCKS, "SELECT filename FROM locks WHERE filename=?", filename)
 	print(file_name)
 	if (file_name): #exists in db
 		user_name = queryDB(DB_NAME_LOCKS, "SELECT username FROM locks WHERE filename=?", filename)
 		if (user_name != username):
-			print ("This file is already locked by a different user (%s). Please try again later." % user_name)
+			printColour("red", "This file is already locked by a different user (%s). Please try again later." % user_name)
 		else:
-			print ("You have already locked this file.")
+			printColour("yellow", "You have already locked this file.")
 	else: #ie not in lock server, so put in lock and give them file (check cache)
 		params = (filename, username)
 		sql_command = "INSERT INTO locks VALUES (?, ?)"
 		insertIntoDB(DB_NAME_LOCKS, params, sql_command)
+		printColour("green", "Lock assigned to %s." % username)
 		#check if in cache
 		if os.path.isfile(CLIENT_CACHE_PATH+filename):
-			print ("File exists in cache. Checking if it is up to date...")
+			printColour("yellow", "File exists in cache. Checking if it is up to date...")
 			hashedFile = filenameToHash[filename]
 			#check if up to date
 			upToDate = checkIfUpToDate(hashedFile, filename)
 			if upToDate == True: #cache copy is up to date, so can transfer info from cache to user's local storage
+				printColour("yellow", "File is up to date, downloading to local storage...")
 				copyfile(LOCAL_STORAGE + filename, CLIENT_CACHE_PATH + filename)
-				print ("Transferred cached file with write access: %s" % filename)
+				printColour("green", "Transferred cached file with write access: %s" % filename)
 			else: # request server holding the file from dir ser, then download file from file server (note when the cache's copy is out of date we assume the master file server and replicate file server is up to date)
+				printColour("yellow", "File is not up to date. Downloading from file servers...")
 				serverID = getServerID(filename, True)
 				getFileFromFileServer(serverID, filename)
 		else: # request server id from dir ser
+			printColour("yellow", "File does not exist in cache. Downloading from file servers...")
 			serverID = getServerID(filename, True)
 			getFileFromFileServer(serverID, filename)
+		printColour("green", "Success.")
 
 def getServerID(filename, masterNeededValue):
 	data = {'filename' : filename, 'masterNeeded' : masterNeededValue}
 	response = requests.get(directoryServerAddress + "GetServerID", json=data, verify=False)
-	print (response)
-	content = response.content
-	responseDict = json.loads(content.decode())
-	print (responseDict)
-	serverIdToQuery = responseDict["ID"]
-	return serverIdToQuery
+	if (response.status_code != 200):
+		printColour("red", "Error occured in trying to retrieve Server ID from Directory Server")
+	else:
+		content = response.content
+		responseDict = json.loads(content.decode())
+		serverIdToQuery = responseDict["ID"]
+		printColour("green", "Successfully retrieved Server ID")
+		return serverIdToQuery
 
 def getFileFromFileServer(serverID, filename):
 	data = {'filename' : filename}
@@ -187,15 +205,14 @@ def getFileFromFileServer(serverID, filename):
 	else:	
 		url = fileServerAddresses[serverID]
 	response = requests.get(url + "/retrieveFile", json=data, verify=False)
-	print ("Writing file to client cache...")
+	printColour("yellow", "Successfully retrieved file from file server.\nTransferring to cache and local storage...")
 	f = open(CLIENT_CACHE_PATH + filename, 'wb')
 	f.write(response.content)
 	f.close()
 	#update file in local storage
-	print ("Transferring file to local storage...")
 	copyfile(LOCAL_STORAGE + filename, CLIENT_CACHE_PATH + filename)
-	print ("Storing hash of file...")
 	hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filename,'rb').read()).hexdigest()
+	printColour("green", "Completed file transfer.")
 
 
 def checkIfUpToDate(hashedFile, filename):
@@ -257,12 +274,13 @@ def handleUser(username, password):
 	user_name = queryDB(DB_NAME_USERS, "SELECT username FROM users WHERE username=?", username)
 	connection = sqlite3.connect(DB_NAME_USERS)
 	cursor = connection.cursor()
-
+	global this_user
 	if (user_name == username):
 		hashedPassword = hashlib.md5(password.encode('utf-8')).hexdigest()
 		resultPassword = queryDB(DB_NAME_USERS, "SELECT password FROM users WHERE username=?", username)
 		if (resultPassword == hashedPassword):
 			printColour("green", "The user provided correct credentials")
+			this_user = user_name
 			return True
 		else:
 			printColour("red", "The user provided the wrong password.")
@@ -274,6 +292,7 @@ def handleUser(username, password):
 		sql_command = "INSERT INTO users VALUES (?, ?)"
 		insertIntoDB(DB_NAME_USERS, params, sql_command)
 		printColour("green", "User %s signed up and logged in." % username)
+		this_user = user_name
 		return True
 
 def printDB(dbName, result):
@@ -352,15 +371,16 @@ if __name__ == '__main__':
 	printColour("purple", "=== LOG IN ===")
 	while(not attemptSuccessful and attempts > 0):
 		printColour("purple", "%d attempts left." % attempts)
-		loginName = input("User Name: ")
-		password = input("Password: ")
+		loginName = input(bcolours.bcolours.BOLD + "User Name: " + bcolours.bcolours.ENDC)
+		password = input(bcolours.bcolours.BOLD + "Password: " + bcolours.bcolours.ENDC)
 		attemptSuccessful = handleUser(loginName, password)
 		attempts = attempts - 1
 
 	if (attemptSuccessful):
 		while 1:
+			printColour("purple", "==== MAIN MENU ====")
 			printColour("purple", "Format: 'Number Filename' (file must exist in Local Storage Folder)")
-			cmd = input("Commands: " + str(commands_dict) + "\n")
+			cmd = input(bcolours.bcolours.BOLD + "Commands: " + str(commands_dict) + "\n" + bcolours.bcolours.ENDC)
 			cmd = cmd.split(" ")
 			if (cmd[0] == "1"):
 				printColour("purple", "Client wants to read")
