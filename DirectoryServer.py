@@ -16,9 +16,20 @@ key = os.path.join(os.path.dirname(__file__), './resources/DIRECTORY_SERVER/udar
 dirserverapp = Flask(__name__)
 
 
-@dirserverapp.route('/DirectoryServer')
-def index():
-    return 'DirectoryServer is running!'
+@dirserverapp.route('/DirectoryServer/pullDownFilenames', methods=['GET'])
+def pullDownFilenames():
+	conn = sqlite3.connect(FILE_DIRECTORY_DB_NAME)
+	cursor = conn.cursor()
+	cursor.execute("SELECT filename FROM fileDirectory;")
+	result = cursor.fetchall()
+	print (result)
+	if (not result):
+		return "No files currently in DB.", 200
+	else:
+		listOfFilenames = []
+		for eachTuple in result:
+			listOfFilenames.append(eachTuple[0])
+		return make_response(jsonify(listOfFilenames), 200)
 
 @dirserverapp.route('/DirectoryServer/newFileServerNotification', methods=['POST'])
 def enterNewFileServer():
@@ -236,4 +247,4 @@ if __name__ == '__main__':
 	initDB()
 
 	context = (cer, key)
-	dirserverapp.run( host='0.0.0.0', port=5050, debug = True, ssl_context=context)
+	dirserverapp.run( host='0.0.0.0', port=5050, debug = False, ssl_context=context)

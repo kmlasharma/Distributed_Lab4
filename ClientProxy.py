@@ -16,7 +16,7 @@ import hashlib
 import sqlite3
 import argparse
 import bcolours
-
+import pprint
 
 context = SSL.Context(SSL.SSLv23_METHOD)
 cer = os.path.join(os.path.dirname(__file__), './resources/CLIENT/udara.com.crt')
@@ -157,6 +157,7 @@ def requestWriteAccess(cmd): #num filename
 			printColour("yellow", "You have already locked this file.")
 	else: #ie not in lock server, so put in lock and give them file (check cache)
 		params = (filename, username)
+		print (params)
 		sql_command = "INSERT INTO locks VALUES (?, ?)"
 		insertIntoDB(DB_NAME_LOCKS, params, sql_command)
 		printColour("green", "Lock assigned to %s." % username)
@@ -269,6 +270,20 @@ def queryDB(dbName, query, param):
 	else:
 		return results
 
+def printFiles(listOfFiles):
+	printColour("purple", "Current files in the system:")
+	for filename in listOfFiles:
+		printColour("purple", filename)
+
+
+def pullDownFiles():
+	url = directoryServerAddress + "pullDownFilenames"
+	response = requests.get(url, verify=False)
+	if (response.status_code == 200):
+		responseList = json.loads(response.content.decode())
+		printFiles(responseList)
+	else:
+		printColour("red", "Error in retrieving files available")
 
 def handleUser(username, password):
 	user_name = queryDB(DB_NAME_USERS, "SELECT username FROM users WHERE username=?", username)
@@ -337,7 +352,13 @@ def initCacheAndReadings():
 		for filename in os.listdir(CLIENT_CACHE_PATH):
 			hashedFile = hashlib.md5(open(CLIENT_CACHE_PATH + filename,'rb').read()).hexdigest()
 			filenameToHash[filename] = hashedFile
-		print (filenameToHash)
+		printColour("purple", "Current files in cache:")
+		printDict(filenameToHash)
+
+def printDict(dictionary):
+	for x in dictionary:
+		string = (x + " = " + dictionary[x]) 
+		printColour("purple", string)
 
 def printColour(col, text):
 	if (col == "red"):
@@ -360,9 +381,15 @@ if __name__ == '__main__':
 	if (args.id):
 		global client_id
 		client_id = args.id
+
 	if (args.port):
-		global port_num
-		port_num = args.port
+		if (int(args.port) < 5000 or int(args.port) > 5040):
+			printColour("red", "ERROR - invalid port selected. Please choose between 5000 and 5040")
+			sys.exit("Client app launch unsuccessful due to port number selection.")
+		else:
+			global port_num
+			port_num = args.port
+
 	CLIENT_CACHE_PATH = CLIENT_CACHE_PATH % (client_id)
 	initCacheAndReadings()
 	initDB()
@@ -380,7 +407,9 @@ if __name__ == '__main__':
 		while 1:
 			printColour("purple", "==== MAIN MENU ====")
 			printColour("purple", "Format: 'Number Filename' (file must exist in Local Storage Folder)")
-			cmd = input(bcolours.bcolours.BOLD + "Commands: " + str(commands_dict) + "\n" + bcolours.bcolours.ENDC)
+			printDict(commands_dict)
+			pullDownFiles()
+			cmd = input()
 			cmd = cmd.split(" ")
 			if (cmd[0] == "1"):
 				printColour("purple", "Client wants to read")
@@ -395,6 +424,6 @@ if __name__ == '__main__':
 				printColour("purple", "Client wants to upload")
 				uploadFile(cmd)
 		context = (cer, key)
-		clientapp.run( host='0.0.0.0', port=port_num, debug = True, ssl_context=context)
+		clientapp.run( host='0.0.0.0', port=port_num, debug = False, ssl_context=context)
 	else:
 		sys.exit("Log in unsuccessful. Relaunch Client Proxy")

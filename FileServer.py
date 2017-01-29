@@ -13,8 +13,8 @@ import argparse
 import json
 
 context = SSL.Context(SSL.SSLv23_METHOD)
-cer = os.path.join(os.path.dirname(__file__), './resources/MASTER_FILE_SERVER/udara.com.crt')
-key = os.path.join(os.path.dirname(__file__), './resources/MASTER_FILE_SERVER/udara.com.key')
+cer = os.path.join(os.path.dirname(__file__), './resources/FILE_SERVER/udara.com.crt')
+key = os.path.join(os.path.dirname(__file__), './resources/FILE_SERVER/udara.com.key')
 fileServerAddresses = {}
 directoryServerAddress = "https://0.0.0.0:5050/DirectoryServer"
 fileserver = Flask(__name__)
@@ -94,7 +94,7 @@ def updateReplicate(fileToReplicate, filename, fileID, hashedFile):
 		}
 	data = {'title' : filename, 'id' : fileID}
 	response = requests.post(url + "/Replicate", files=files, data=data, verify=False)
-	if (response.status_code == 201): # 
+	if (response.status_code == 200): # 
 		content = response.content
 		responseDict = json.loads(content.decode())
 		print (responseDict)
@@ -119,7 +119,7 @@ def acceptReplicate():
 		path = FILE_FOLDER + filename
 		newFile.save(path)
 		print ("Successfully saved %s" % filename)
-		return jsonify({"Server_ID" : server_id, "Message" : "Successfully saved replicate onto server"}), 201
+		return jsonify({"Server_ID" : server_id, "Message" : "Successfully saved replicate onto server"}), 200
 
 #send the file to other server for replication
 def makeReplicate(fileToReplicate, filename, fileID, hashedFile):
@@ -142,7 +142,7 @@ def makeReplicate(fileToReplicate, filename, fileID, hashedFile):
 		}
 	data = {'title' : filename, 'id' : fileID}
 	response = requests.post(url, files=files, data=data, verify=False)
-	if (response.status_code == 201): # 
+	if (response.status_code == 200): # 
 		content = response.content
 		responseDict = json.loads(content.decode())
 		print (responseDict)
@@ -182,10 +182,11 @@ def notifyDirSer():
 	url = directoryServerAddress + "/newFileServerNotification"
 	data = {'id' : server_id, 'base_url' : 'https://0.0.0.0:%s/Server' % (port_num)}
 	response = requests.post(url, json=data, verify=False)
-	if (response.status_code == 201): # 
+	if (response.status_code == 200): # 
 		print ("This file server %s is registered with the directory server." % server_id)
 	else:
 		print ("Error occured trying to register file server %s with the directory server." % server_id)
+		sys.exit()
 	print (response)
 
 
@@ -199,12 +200,17 @@ if __name__ == '__main__':
 		global server_id
 		server_id = args.id
 	if (args.port):
-		global port_num
-		port_num = args.port
+		if (int(args.port) < 5060):
+			print("ERROR - invalid port selected. Please choose 5060 and onwards.")
+			sys.exit("FileServer app launch unsuccessful due to port number selection.")
+		else:
+			global port_num
+			port_num = args.port
+
 	FILE_FOLDER = FILE_FOLDER % server_id
 	if not os.path.isdir(FILE_FOLDER):
 		os.mkdir(FILE_FOLDER)
 	context = (cer, key)
 	notifyDirSer()
-	fileserver.run( host='0.0.0.0', port=port_num, debug = False/True, ssl_context=context)
+	fileserver.run( host='0.0.0.0', port=port_num, debug = False, ssl_context=context)
 	
