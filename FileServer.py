@@ -21,9 +21,6 @@ fileserver = Flask(__name__)
 FILE_FOLDER = "./FILE_SERVER_FOLDER_%s/"
 
 
-@fileserver.route('/Server')
-def index():
-    return 'File Server is running!'
 
 @fileserver.route('/Server/NewFile', methods=["POST"])
 def uploadNewFileFromClient():

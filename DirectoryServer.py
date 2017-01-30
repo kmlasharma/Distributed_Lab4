@@ -24,7 +24,7 @@ def pullDownFilenames():
 	result = cursor.fetchall()
 	print (result)
 	if (not result):
-		return "No files currently in DB.", 200
+		return "No files currently in DB.", 202
 	else:
 		listOfFilenames = []
 		for eachTuple in result:

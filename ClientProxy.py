@@ -282,6 +282,8 @@ def pullDownFiles():
 	if (response.status_code == 200):
 		responseList = json.loads(response.content.decode())
 		printFiles(responseList)
+	elif (response.status_code == 202):
+		printColour("green", "There are no files backed up in the system")
 	else:
 		printColour("red", "Error in retrieving files available")
 
