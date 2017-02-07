@@ -70,6 +70,10 @@ $ pip3 install Flask
 $ pip3 install Requests
 ```
 
+- Python3 OpenSSL
+```sh
+$ pip3 install pyOpenSSL
+```
 
 #### Running
 
